@@ -1,8 +1,7 @@
-@file:OptIn(UnstableApi::class) // Handles all UnstableApi warnings in this file
+@file:OptIn(UnstableApi::class)
 
 package com.devlight.offbookplus.playback
 
-import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -19,8 +18,8 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.devlight.offbookplus.data.AppDatabase
-import com.devlight.offbookplus.data.BookProgressEntity
-import com.devlight.offbookplus.data.LocalFileScanner
+import com.devlight.offbookplus.data.PlaybackProgressEntity
+import com.devlight.offbookplus.model.MediaType
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -30,9 +29,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val TAG = "AudiobookService"
+private const val TAG = "MediaPlaybackService"
 
-class AudiobookService : MediaSessionService() {
+class MediaPlaybackService : MediaSessionService() {
 
     private lateinit var exoPlayer: ExoPlayer
     private lateinit var mediaSession: MediaSession
@@ -43,14 +42,14 @@ class AudiobookService : MediaSessionService() {
     }
 
 
-    private inner class AudiobookSessionCallback : MediaSession.Callback {
+    private inner class MediaSessionCallback : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                 .add(Player.COMMAND_SEEK_TO_NEXT)
                 .add(Player.COMMAND_SEEK_TO_PREVIOUS)
                 .add(Player.COMMAND_SEEK_FORWARD)
                 .add(Player.COMMAND_SEEK_BACK)
-                .add(SessionCommand(PlaybackContract.COMMAND_LOAD_BOOK_AND_PLAY, Bundle.EMPTY))
+                .add(SessionCommand(PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -66,41 +65,75 @@ class AudiobookService : MediaSessionService() {
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == PlaybackContract.COMMAND_LOAD_BOOK_AND_PLAY) {
-                args.getString(PlaybackContract.KEY_BOOK_ID)?.let { loadBook(it) }
+            if (customCommand.customAction == PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY) {
+                val mediaId = args.getString(PlaybackContract.KEY_MEDIA_ID)
+                val mediaTypeString = args.getString(PlaybackContract.KEY_MEDIA_TYPE)
+                val mediaType = try { MediaType.valueOf(mediaTypeString ?: "AUDIOBOOKS") } catch (e: IllegalArgumentException) { MediaType.AUDIOBOOKS }
+
+                if (mediaId != null) {
+                    loadPlaylistFor(mediaId, mediaType)
+                }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
-        private fun loadBook(bookId: String) {
-            serviceScope.launch(Dispatchers.IO) {
-                val book = LocalFileScanner(applicationContext).scanForAudiobooks().find { it.id == bookId } ?: return@launch
-                val fileUri = Uri.parse(book.chapters.first().fileUri)
-                val progress = AppDatabase.getInstance(applicationContext).progressDao().loadProgress(bookId)
+        private fun loadPlaylistFor(bookId: String, mediaType: MediaType) {
+            serviceScope.launch {
+                val (playlistItems, progress, startIndex) = withContext(Dispatchers.IO) {
+                    val db = AppDatabase.getInstance(applicationContext)
+                    val selectedItemEntity = db.mediaItemDao().getItemsByMediaType(mediaType.name).find { it.id == bookId }
+                    if (selectedItemEntity == null) return@withContext null
 
-                val mediaMetadata = MediaMetadata.Builder()
-                    .setTitle(book.title)
-                    .setArtist(book.author)
-                    .setAlbumTitle(book.id)
-                    .build()
+                    val items = db.mediaItemDao().getItemsByPlaylistId(selectedItemEntity.playlistId)
+                    val prog = db.progressDao().loadProgress(selectedItemEntity.playlistId)
+                    val startIdx = items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0)
 
-                val mediaItem = MediaItem.Builder().setMediaId(book.id).setUri(fileUri).setMediaMetadata(mediaMetadata).build()
+                    Triple(items, prog, startIdx)
+                } ?: return@launch
 
-                withContext(Dispatchers.Main) {
-                    exoPlayer.stop()
-                    exoPlayer.clearMediaItems()
-                    exoPlayer.setMediaItem(mediaItem, progress?.playbackPositionMs ?: 0L)
-                    exoPlayer.prepare()
-                    exoPlayer.play()
+                if (playlistItems.isEmpty()) return@launch
+                val mediaItems = playlistItems.map { item ->
+                    val metadata = MediaMetadata.Builder()
+                        .setAlbumTitle(item.playlistId)
+                        .setTitle(item.title)
+                        .setArtist(item.artist)
+                        .setTrackNumber(item.trackNumber)
+                        .setExtras(Bundle().apply { putString("MEDIA_TYPE", item.mediaType.name) })
+                        .build()
+                    MediaItem.Builder()
+                        .setMediaId(item.id)
+                        .setUri(item.fileUri)
+                        .setMediaMetadata(metadata)
+                        .build()
                 }
+
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+                exoPlayer.setMediaItems(mediaItems, progress?.trackIndex ?: startIndex, progress?.playbackPositionMs ?: 0L)
+                exoPlayer.prepare()
+                exoPlayer.play()
             }
         }
     }
     private fun saveCurrentProgress() {
-        val bookId = exoPlayer.currentMediaItem?.mediaId ?: return
-        if (exoPlayer.currentPosition <= 0) return
-        val progress = BookProgressEntity(bookId = bookId, playbackPositionMs = exoPlayer.currentPosition)
-        serviceScope.launch(Dispatchers.IO) {
-            AppDatabase.getInstance(applicationContext).progressDao().saveProgress(progress)
+        val mediaItem = exoPlayer.currentMediaItem ?: return
+        val mediaTypeString = mediaItem.mediaMetadata.extras?.getString("MEDIA_TYPE")
+        val mediaType = try { MediaType.valueOf(mediaTypeString ?: "") } catch (e: Exception) { null }
+
+        if (mediaType != MediaType.AUDIOBOOKS) {
+            return
+        }
+
+        val playlistId = mediaItem.mediaMetadata.albumTitle?.toString() ?: return
+        if (exoPlayer.currentPosition > 0 && exoPlayer.currentPosition < exoPlayer.duration - 1000) {
+            val progress = PlaybackProgressEntity(
+                playlistId = playlistId,
+                trackIndex = exoPlayer.currentMediaItemIndex,
+                playbackPositionMs = exoPlayer.currentPosition
+            )
+            serviceScope.launch(Dispatchers.IO) {
+                AppDatabase.getInstance(applicationContext).progressDao().saveProgress(progress)
+                Log.d(TAG, "Saved Audiobook progress for '$playlistId'")
+            }
         }
     }
     override fun onCreate() {
@@ -108,10 +141,9 @@ class AudiobookService : MediaSessionService() {
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
         exoPlayer = ExoPlayer.Builder(this).setAudioAttributes(audioAttributes, true).build()
 
-        // --- BATTERY PERFORMANCE: ENABLE AUDIO OFFLOAD ---
         val audioOffloadPreferences = TrackSelectionParameters.AudioOffloadPreferences.Builder()
             .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
-            .setIsGaplessSupportRequired(true) // Good for audiobooks with multiple files
+            .setIsGaplessSupportRequired(true)
             .build()
 
         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
@@ -120,7 +152,7 @@ class AudiobookService : MediaSessionService() {
             .build()
 
         exoPlayer.addListener(playerListener)
-        mediaSession = MediaSession.Builder(this, exoPlayer).setCallback(AudiobookSessionCallback()).build()
+        mediaSession = MediaSession.Builder(this, exoPlayer).setCallback(MediaSessionCallback()).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession

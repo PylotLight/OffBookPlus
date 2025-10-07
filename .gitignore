@@ -5,6 +5,8 @@
 *.log
 *.iml
 .gradle
+gradle.properties
+*.jks
 /local.properties
 /.idea/caches
 /.idea/libraries

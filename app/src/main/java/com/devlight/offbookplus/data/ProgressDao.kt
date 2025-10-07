@@ -14,22 +14,23 @@ import kotlinx.coroutines.flow.Flow
 interface ProgressDao {
 
     /**
-     * Inserts or updates the progress for a book.
-     * OnConflictStrategy.REPLACE ensures that if a record with the same bookId exists, it is updated.
+     * Inserts or updates the progress for a media playlist.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun saveProgress(progress: BookProgressEntity)
+    suspend fun saveProgress(progress: PlaybackProgressEntity)
+
 
     /**
-     * Retrieves the last saved progress for a specific audiobook ID.
-     * Returns null if no progress has been saved for that book yet.
+     * Retrieves the last saved progress for a specific playlist ID.
+     * Returns null if no progress has been saved for that playlist yet.
      */
-    @Query("SELECT * FROM book_progress WHERE bookId = :bookId")
-    suspend fun loadProgress(bookId: String): BookProgressEntity?
+    @Query("SELECT * FROM playback_progress WHERE playlistId = :playlistId")
+    suspend fun loadProgress(playlistId: String): PlaybackProgressEntity?
+
 
     /**
      * Optionally, retrieve all saved progress records (e.g., for a 'Recently Played' feature).
      */
-    @Query("SELECT * FROM book_progress ORDER BY lastUpdatedTimestamp DESC")
-    fun getAllProgress(): Flow<List<BookProgressEntity>>
+    @Query("SELECT * FROM playback_progress ORDER BY lastUpdatedTimestamp DESC")
+    fun getAllProgress(): Flow<List<PlaybackProgressEntity>>
 }

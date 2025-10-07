@@ -18,6 +18,15 @@ android {
 
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(project.property("OFFBOOKPLUS_RELEASE_STORE_FILE") as String)
+            storePassword = project.property("OFFBOOKPLUS_RELEASE_STORE_PASSWORD") as String
+            keyAlias = project.property("OFFBOOKPLUS_RELEASE_KEY_ALIAS") as String
+            keyPassword = project.property("OFFBOOKPLUS_RELEASE_KEY_PASSWORD") as String
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -25,6 +34,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

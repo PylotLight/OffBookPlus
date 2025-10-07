@@ -22,12 +22,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.Player
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Icon
@@ -42,20 +45,25 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material3.LinearProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
+import com.devlight.offbookplus.model.MediaType // Import MediaType
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
+import kotlinx.coroutines.launch // Import launch
+import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
 @Composable
 fun PlayerScreen(
-    bookId: String?,
+    mediaId: String?,
+    mediaType: MediaType,
     onBack: () -> Unit,
     viewModel: PlaybackViewModel = viewModel()
 ) {
     val state by viewModel.playbackState.collectAsState()
-
-    LaunchedEffect(bookId) {
-        if (bookId != null) {
-            viewModel.playBookFromLibrary(bookId)
+    LaunchedEffect(mediaId, mediaType) {
+        if (mediaId != null) {
+            val decodedBookId = URLDecoder.decode(mediaId, "UTF-8")
+            // This will only send a command if the media isn't already loaded.
+            viewModel.playMediaItem(decodedBookId, mediaType)
         }
     }
 
@@ -86,13 +94,11 @@ fun PlayerScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Main Controls (center row)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // --- THE DEFINITIVE FIX: Build the button from low-level components ---
                 GestureButton(
                     onClick = { viewModel.seekToPosition(state.currentPositionMs - 15000) },
                     onDoubleClick = { viewModel.seekToPosition(state.currentPositionMs - 60000) },
@@ -104,18 +110,27 @@ fun PlayerScreen(
 
                 Spacer(modifier = Modifier.width(16.dp))
 
-                // Play/Pause Button remains a standard Button as it only needs a single click
                 Button(
-                    onClick = { if (state.isPlaying) viewModel.pause() else viewModel.play() },
+                    onClick = {
+                        if (state.playbackState == Player.STATE_ENDED) {
+                            viewModel.replay()
+                        } else {
+                            if (state.isPlaying) viewModel.pause() else viewModel.play()
+                        }
+                    },
                     enabled = state.isReady,
                     modifier = Modifier.size(ButtonDefaults.LargeButtonSize)
                 ) {
-                    Icon(imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play/Pause", modifier = Modifier.size(ButtonDefaults.LargeIconSize))
+                    val icon = when {
+                        state.playbackState == Player.STATE_ENDED -> Icons.Default.Replay
+                        state.isPlaying -> Icons.Default.Pause
+                        else -> Icons.Default.PlayArrow
+                    }
+                    Icon(imageVector = icon, contentDescription = "Play/Pause/Replay", modifier = Modifier.size(ButtonDefaults.LargeIconSize))
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
 
-                // Forward Button with Gestures
                 GestureButton(
                     onClick = { viewModel.seekToPosition(state.currentPositionMs + 30000) },
                     onDoubleClick = { viewModel.seekToPosition(state.currentPositionMs + 60000) },
@@ -126,7 +141,6 @@ fun PlayerScreen(
                 }
             }
 
-            // Chapter Controls (bottom row, smaller)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.Center
@@ -170,7 +184,6 @@ private fun GestureButton(
         content()
     }
 }
-
 
 private fun formatTime(ms: Long): String {
     if (ms < 0) return "00:00"
