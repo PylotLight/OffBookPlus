@@ -14,7 +14,6 @@ import java.io.File
 private const val TAG = "LocalFileScanner"
 
 class LocalFileScanner(private val context: Context) {
-
     private fun getValidExtensions(mediaType: MediaType): Set<String> {
         return when (mediaType) {
             MediaType.AUDIOBOOKS -> setOf("m4a", "m4b")
@@ -26,8 +25,24 @@ class LocalFileScanner(private val context: Context) {
         val storageDir = Environment.getExternalStorageDirectory()
         return File(storageDir, mediaType.directoryName)
     }
+    /**
+     * A very fast function that ONLY counts the number of valid media files in a directory.
+     * It performs no I/O other than listing files.
+     */
+    fun getDirectoryFileCount(mediaType: MediaType): Int {
+        val mediaDir = getMediaDirectory(mediaType)
+        val validExtensions = getValidExtensions(mediaType)
 
-    fun scanLibraryFor(mediaType: MediaType): List<MediaItemEntity> {
+        if (!mediaDir.exists() || !mediaDir.isDirectory) {
+            return 0
+        }
+        return mediaDir.walk().asSequence().count { it.isFile && it.extension.lowercase() in validExtensions }
+    }
+
+    /**
+     * The full, slow scan that extracts metadata and creates database entities.
+     */
+    fun performDeepScanFor(mediaType: MediaType): List<MediaItemEntity> {
         val items = mutableListOf<MediaItemEntity>()
         val mediaDir = getMediaDirectory(mediaType)
         val validExtensions = getValidExtensions(mediaType)
@@ -39,7 +54,6 @@ class LocalFileScanner(private val context: Context) {
 
         Log.i(TAG, "Scanning directory: ${mediaDir.absolutePath} for types: $validExtensions")
 
-        // Group all found files by their parent directory
         mediaDir.walk()
             .filter { it.isFile && it.extension.lowercase() in validExtensions }
             .sortedBy { it.name }
