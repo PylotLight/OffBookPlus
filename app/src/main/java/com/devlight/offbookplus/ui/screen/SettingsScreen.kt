@@ -30,9 +30,9 @@ fun SettingsScreen(
         }
         item {
             Chip(
-                onClick = { viewModel.rescanLibrary() },
-                label = { Text("Rescan Library") },
-                secondaryLabel = { Text("Search storage for new files.") },
+                onClick = { viewModel.forceFullRescan() },
+                label = { Text("Force Full Rescan") },
+                secondaryLabel = { Text("Rescan all media folders.") },
                 icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = "Rescan") }
             )
         }
