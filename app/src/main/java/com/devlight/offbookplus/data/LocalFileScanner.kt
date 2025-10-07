@@ -7,58 +7,61 @@ import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
-import com.devlight.offbookplus.model.Audiobook
-import com.devlight.offbookplus.model.Chapter
+import com.devlight.offbookplus.model.MediaType
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
 private const val TAG = "LocalFileScanner"
-private const val AUDIOBOOKS_DIR = "Audiobooks"
 
 class LocalFileScanner(private val context: Context) {
 
-    private val validExtensions = setOf("m4a", "m4b")
+    private fun getValidExtensions(mediaType: MediaType): Set<String> {
+        return when (mediaType) {
+            MediaType.AUDIOBOOKS -> setOf("m4a", "m4b")
+            MediaType.PODCASTS, MediaType.MUSIC -> setOf("mp3", "m4a", "ogg", "opus", "flac")
+        }
+    }
 
-    fun scanForAudiobooks(): List<Audiobook> {
-        val audiobooks = mutableListOf<Audiobook>()
+    private fun getMediaDirectory(mediaType: MediaType): File {
         val storageDir = Environment.getExternalStorageDirectory()
-        val audiobooksDir = File(storageDir, AUDIOBOOKS_DIR)
+        return File(storageDir, mediaType.directoryName)
+    }
 
-        if (!audiobooksDir.exists() || !audiobooksDir.isDirectory) {
-            Log.e(TAG, "Directory not found: ${audiobooksDir.absolutePath}")
+    fun scanLibraryFor(mediaType: MediaType): List<MediaItemEntity> {
+        val items = mutableListOf<MediaItemEntity>()
+        val mediaDir = getMediaDirectory(mediaType)
+        val validExtensions = getValidExtensions(mediaType)
+
+        if (!mediaDir.exists() || !mediaDir.isDirectory) {
+            Log.e(TAG, "Directory not found: ${mediaDir.absolutePath}")
             return emptyList()
         }
 
-        Log.i(TAG, "Scanning directory: ${audiobooksDir.absolutePath}")
+        Log.i(TAG, "Scanning directory: ${mediaDir.absolutePath} for types: $validExtensions")
 
-        audiobooksDir.walk().forEach { file ->
-            if (file.isFile && file.extension.lowercase() in validExtensions) {
-                // For each file, extract its rich metadata to build an Audiobook object.
-                // runBlocking is acceptable here as this is a one-time scan on app start.
+        // Group all found files by their parent directory
+        mediaDir.walk()
+            .filter { it.isFile && it.extension.lowercase() in validExtensions }
+            .sortedBy { it.name }
+            .forEachIndexed { index, file ->
                 val extractedData = runBlocking { ChapterExtractor.extract(context, Uri.fromFile(file)) }
+                val fileUri = Uri.fromFile(file).toString()
+                val playlistId = (file.parentFile?.name ?: "unknown_album").replace("\\s".toRegex(), "_").lowercase()
 
-                // Use the parent folder name as a unique ID
-                val bookId = (file.parentFile?.name ?: file.nameWithoutExtension)
-                    .replace("\\s".toRegex(), "_").lowercase()
-
-                audiobooks.add(
-                    Audiobook(
-                        id = bookId,
-                        title = extractedData?.title ?: bookId.replace("_", " "),
-                        author = extractedData?.artist ?: "Unknown Author",
-                        chapters = listOf(Chapter(
-                            bookId = bookId,
-                            index = 0,
-                            title = file.nameWithoutExtension,
-                            startTimeSec = 0,
-                            fileUri = Uri.fromFile(file).toString()
-                        ))
+                items.add(
+                    MediaItemEntity(
+                        id = fileUri,
+                        playlistId = playlistId,
+                        mediaType = mediaType,
+                        title = extractedData?.title ?: file.nameWithoutExtension,
+                        artist = extractedData?.artist ?: file.parentFile?.name ?: "Unknown Artist",
+                        trackNumber = index,
+                        fileUri = fileUri
                     )
                 )
             }
-        }
 
-        Log.d(TAG, "Scan complete. Found ${audiobooks.size} audiobooks.")
-        return audiobooks
+        Log.d(TAG, "Scan complete for ${mediaType.name}. Found ${items.size} individual tracks.")
+        return items
     }
 }

@@ -42,35 +42,27 @@ object ChapterExtractor {
 
                 for (i in 0 until trackGroups.length) {
                     val format = trackGroups[i].getFormat(0)
+                    // --- NEW: DETAILED TRACK GROUP LOGGING ---
+                    Log.d(TAG, "  > Track Group $i Info: mimeType=${format.sampleMimeType}, id=${format.id}, language=${format.language}")
                     format.metadata?.let { metadata ->
-                        Log.d(TAG, "  > Track $i has ${metadata.length()} metadata entries.")
+                        Log.d(TAG, "    > Track $i has ${metadata.length()} metadata entries.")
                         for (j in 0 until metadata.length()) {
-//                            val entry = metadata[j]
                             val entry = metadata.get(j)
-//                            when (entry1) {
-//                                is Metadata.Entry -> {
-//                                    // Custom logic: Some tools embed chapters as custom keys
-//                                    // This is heuristic-based; no standard entry type exists
-//                                    println("Metadata entry: $entry")
-//                                    Log.v(TAG, "    - Entry $j: Value = ${entry.javaClass.fields}")
-//                                }
-//                            }
-                            // --- DEEP LOGGING: LOG EVERY SINGLE METADATA ENTRY TYPE ---
-//                            Log.v(TAG, "    - Entry $j: Type = ${entry.javaClass.simpleName}")
-//                            Log.v(TAG, "    - Entry $j: Value = $entry")
+                            // Log every single metadata entry's type and value
+                            Log.v(TAG, "      - Entry $j: Type = ${entry.javaClass.simpleName}, Value = $entry")
                             if (entry is ChapterFrame) {
                                 chapters.add(entry)
-                                Log.i(TAG, "      >> Found Chapter: ID=${entry.chapterId}")
+                                Log.i(TAG, "        >> Found Chapter: ID=${entry.chapterId}")
                             }
                             if (entry is TextInformationFrame) {
                                 when (entry.id) {
                                     "TIT2" -> {
                                         title = entry.value
-                                        Log.i(TAG, "      >> Found Title (TIT2): $title")
+                                        Log.i(TAG, "        >> Found Title (TIT2): $title")
                                     }
                                     "TPE1" -> {
                                         artist = entry.value
-                                        Log.i(TAG, "      >> Found Artist (TPE1): $artist")
+                                        Log.i(TAG, "        >> Found Artist (TPE1): $artist")
                                     }
                                 }
                             }

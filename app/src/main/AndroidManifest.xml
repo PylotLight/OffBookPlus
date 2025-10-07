@@ -42,14 +42,12 @@
         </activity>
 
         <service
-            android:name=".playback.AudiobookService"
+            android:name=".playback.MediaPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"
             android:permission="TODO">
             <intent-filter>
-                <!-- This action is required for Media3 -->
                 <action android:name="androidx.media3.session.MediaSessionService" />
-                <!-- This action is required for system media buttons -->
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>

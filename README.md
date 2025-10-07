@@ -1,146 +1,81 @@
-### Current MVP only supports basic Audiobook playback from /sdcard/Audiobooks
-### Big plans in store to actually make the rest of this readme legit.. maby 
+# Off-Book+: A Local Media Player for Wear OS
 
-# OffBeatPlus
-*Your wrist just became your offline media library.*
-*WearOS Offline Media player for Audiobooks, Podcasts and music*
+Off-Book+ is a standalone, local-first audiobook, podcast, and music player designed for Wear OS. It allows you to sideload your own audio files and enjoy them on the go, completely offline. The player is built with a modern, database-backed architecture using Jetpack Compose, Media3, and Room.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
-[![API](https://img.shields.io/badge/API-28%2B-brightgreen.svg)](build.gradle)  
-[![Release](https://img.shields.io/github/v/release/devlight/OffBeatPlus)](https://github.com/devlight/OffBeatPlus/releases)  
-[![F-Droid](https://img.shields.io/f-droid/v/io.github.devlight.offbeatplus)](https://f-droid.org/en/packages/io.github.devbeatplus)
+## Key Features
 
----
+-   **100% Offline, Local Playback:** No streaming, no internet required. Play files directly from your watch's storage.
+-   **Multi-Type Library:** Organizes your media into three distinct collections: **Audiobooks**, **Podcasts**, and **Music**.
+-   **Folder-Based Playlists:** Automatically treats each folder within your media directories as a playlist, enabling continuous, sequential playback of all tracks within it.
+-   **Persistent Library:** Your library is scanned and saved to a local database, ensuring fast, instant loading of your collections every time you open the app.
+-   **Conditional Progress Saving:** Playback position is intelligently saved **only for Audiobooks**, allowing you to pick up exactly where you left off. Music and podcasts will always start from the beginning.
+-   **Manual Library Management:** A dedicated settings screen gives you full control to trigger a manual rescan of your device's storage to discover new media.
+-   **Modern Playback Engine:** Built on **Media3 (ExoPlayer)**, providing robust, battery-efficient playback with audio offload support.
+-   **Native Wear OS Interface:** A clean, simple UI built with Jetpack Compose, designed for ease of use on a small screen.
 
-## Why OffBeatPlus?
+## How It Works
 
-WearOS ships with a music player, but it **requires your phone** and **forgets audiobooks the moment you close the app**.  
-OffBeatPlus is a **tiny, open-source, fully-offline** player engineered for **audiobooks, podcasts & music**—no phone, no cloud, no ads, no tracking.  
-Sync once, then run, hike, swim or commute **completely untethered**.
+The application is built on a modern Android tech stack:
+-   **UI:** Jetpack Compose for Wear OS with Horologist components.
+-   **Playback:** Media3, using a foreground `MediaSessionService` to handle background playback and `ExoPlayer` as the underlying engine.
+-   **Database:** Room Persistence Library to store the media library and audiobook progress.
+-   **Architecture:** Follows MVVM principles, with ViewModels driving UI state and logic.
+-   **Concurrency:** Kotlin Coroutines are used for all background tasks, including file scanning and database operations.
 
----
+## Getting Started & Usage
 
-## ✨ Highlights
+To use Off-Book+, you must manually copy audio files to your watch.
 
-|  |  |
-|---|---|
-| 📚 **Audiobook-first** | Automatic per-book progress, chapters, bookmarks, sleep-timer with smart rewind. |
-| 🎙️ **Podcast ready** | RSS downloader, OPML import, background refresh when on charger/Wi-Fi. |
-| 🎧 **Music friendly** | Gapless playback, album art, playlists, shuffle & repeat. |
-| ⌚ **Wear-OS native** | Written in Kotlin + Compose for Wear, 60 fps lists, rotary input, hardware buttons mapped. |
-| 🛜 **100 % offline** | No Google APIs, no Firebase, no internet permission after sync. |
-| 🔋 **Brutal battery life** | < 3 % per hour on most watches (tested on Pixel Watch 2 & Galaxy Watch 6). |
-| 🧩 **Extensible** | Plugin-style decoder interface; drop-in FFmpeg or Android MediaCodec. |
-| 🌓 **Material You** | Dynamic colours, AMOLED black theme, large-screen round layouts. |
-| 🔓 **FOSS** | MIT licensed, community translations, public roadmap, GitHub Actions CI. |
+1.  **Connect to your watch via ADB:**
+    ```bash
+    adb connect <your_watch_ip_address>:5555
+    ```
 
----
+2.  **Create the necessary directories** on your watch's internal storage (`/sdcard/`):
+   -   `/sdcard/Audiobooks/`
+   -   `/sdcard/Podcasts/`
+   -   `/sdcard/Music/`
 
-## Screenshots
+3.  **Push your files using `adb push`**. Place related files (e.g., chapters of a book, songs of an album) inside their own sub-folder.
 
-<p float="left">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01_library.png" width="200" alt="Library"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02_player.png" width="200" alt="Player"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03_sleep.png" width="200" alt="Sleep Timer"/>
-</p>
+    **Example:**
+    ```bash
+    # Push an audiobook with multiple chapters
+    adb push "path/to/My Awesome Book" "/sdcard/Audiobooks/"
 
----
+    # Push a music album
+    adb push "path/to/My Favorite Album" "/sdcard/Music/"
+    ```
+    The app will treat the `My Awesome Book` folder as a single playlist.
 
-## Download
+4.  **Scan Your Library:**
+   -   Open the Off-Book+ app on your watch.
+   -   Navigate to **Settings**.
+   -   Tap **"Rescan Library"**.
+   -   The app will scan the directories, save all found items to its database, and you can then navigate to your collections to see your media.
 
-[<img src="assets/get_it_on_github.png" height="60">](https://github.com/devlight/OffBeatPlus/releases/latest)  
-[<img src="assets/get_it_on_fdroid.png" height="60">](https://f-droid.org/en/packages/io.github.devlight.offbeatplus)
+## Roadmap & Future Features
 
-Or build yourself in **Android Studio Hedgehog** → *Run* on any Wear 2.0+ device.
+This project is in active development. The following features are planned for future releases:
 
----
+-   **Advanced Playback Controls:**
+   -   Implement more intuitive seek gestures (e.g., tap-to-increment, double-tap to skip, hold-to-scrub).
+   -   A larger, more interactive progress bar.
 
-## Quick-Start
+-   **Playback Customization:**
+   -   User-configurable playback speed control, with different defaults for each media type.
+   -   On-screen volume control.
 
-1. Install the **OffBeatPlus Sync** companion (optional) on your phone or use ADB:
-   ```bash
-   adb push myBook.m4a /sdcard/Music/
-   ```
-2. Long-press the crown → OffBeatPlus → *Rescan*.
-3. Tap the book → hit play.  
-   That’s it—your progress is auto-saved every 30 s to the watch’s internal storage.
+-   **Enhanced Library Management:**
+   -   Intelligently filter the library view to only show directories that contain valid media files.
+   -   Explore integration with the Android MediaStore for more robust file discovery.
 
----
+-   **UI/UX Overhaul:**
+   -   A more polished player screen with better metadata display (e.g., album/book title).
+   -   Improved visual feedback for controls.
 
-## Syncing Media
+-   **Data Management:**
+   -   Options to export playback history or backup application data.
 
-| Method | Works without Play Services | Notes |
-|---|---|---|
-| ADB | ✅ | Drag & drop, fastest for big libraries. |
-| Companion Android app | ✅ | Wi-Fi direct, converts chapters, embeds covers. |
-| USB-C OTG | ✅ | Copy to `Music/` folder, then rescan. |
-| Google Drive / Dropbox | ❌ | OffBeatPlus requests zero internet permissions. |
-
----
-
-## Supported Formats
-
-* Audio: MP3, M4A, M4B, OPUS, FLAC, OGG, WMA
-* Playlist: M3U, PLS, WPL
-* Podcast: RSS 2.0 with enclosures, Atom 1.0
-* Audiobook chapters: Nero, QuickTime, MP4, M4B chapters
-* Metadata: ID3v2.4, Vorbis Comment, FLAC tags
-
----
-
-## Developer Corner
-
-### Clone & Build
-```bash
-git clone https://github.com/devlight/OffBeatPlus.git
-cd OffBeatPlus
-./gradlew assembleDebug
-```
-APK lands in `app/build/outputs/apk/debug/`.
-
-### Architecture
-* **UI**: Compose for Wear + Horologist
-* **Domain**: Clean MVVM, Coroutines, Flow
-* **Data**: Room + plain JSON for portability
-* **Playback**: ExoPlayer + custom FFmpeg extension
-* **DI**: Koin (lightweight for 512 MB watches)
-
-### Contribute
-1. Pick a [good first issue](https://github.com/devlight/OffBeatPlus/labels/good%20first%20issue).
-2. Fork → feature branch → PR → CI runs instrumentation on emulator.
-3. We squash-merge and publish nightly to `main` branch F-Droid repo.
-
----
-
-## Roadmap
-
-* [ ] Wear 4.x tiles & complications
-* [ ] Bluetooth headset button custom mapping
-* [ ] Cloud-free podcast sync via local RSS server
-* [ ] TTS for chapter names (accessibility)
-* [ ] Translations: FR, DE, ES, JA, ZH-rCN (help welcome!)
-
-Vote or add ideas in [Discussions](https://github.com/devlight/OffBeatPlus/discussions).
-
----
-
-## License
-
-MIT © 2024 DevLight. See [LICENSE](LICENSE) for full text.
-
----
-
-## Acknowledgements
-
-ExoPlayer, FFmpeg-Kit, Horologist, Material Icons, JetBrains Kotlin, and every contributor who filed a bug or sent a pull request.  
-Logo derived from [Tabler Icons](https://tabler-icons.io), MIT licensed.
-
----
-
-## Support
-
-💬 Matrix: [#offbeatplus:matrix.org](https://matrix.to/#/#offbeatplus:matrix.org)  
-📧 Email: offbeatplus@devlight.io  
-☕ Buy maintainers a coffee: [Ko-fi](https://ko-fi.com/devlight)
-
-Enjoy your offline beats—wherever your wrist takes you!
+-   **Wireless File Transfer:**
+   -   Implement a feature to copy files to the watch over Wi-Fi, removing the dependency on ADB for everyday use.

@@ -4,19 +4,22 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
 /**
  * The main Room Database class for the application.
  * Defines the entities (tables) and provides access to the DAOs.
  */
 @Database(
-    entities = [BookProgressEntity::class],
-    version = 2,
+    entities = [PlaybackProgressEntity::class, MediaItemEntity::class],
+    version = 1,
     exportSchema = false
 )
+@TypeConverters(MediaTypeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun progressDao(): ProgressDao
+    abstract fun mediaItemDao(): MediaItemDao
 
     companion object {
         @Volatile
@@ -27,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "audiobook_db"
+                    "offbookplus_db"
                 )
                     .fallbackToDestructiveMigration(true)
                     .build()
