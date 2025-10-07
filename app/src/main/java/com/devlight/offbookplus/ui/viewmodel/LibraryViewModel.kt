@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.content.edit
 
 private const val TAG = "LibraryViewModel"
 
@@ -32,7 +33,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _currentMediaType = MutableStateFlow(MediaType.AUDIOBOOKS)
     init {
-        // When the app starts, automatically check for updates in the background.
         checkForLibraryUpdates()
     }
     /**
@@ -52,27 +52,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val scanner = LocalFileScanner(getApplication())
 
             MediaType.entries.forEach { mediaType ->
-                // Launch a separate, parallel job for each media type.
-                // Music scan will not block Audiobook scan.
                 launch(Dispatchers.IO) {
                     val storedFileCount = prefs.getInt(KEY_PREFIX_FILE_COUNT + mediaType.name, -1)
                     val currentFileCount = scanner.getDirectoryFileCount(mediaType)
 
                     if (currentFileCount != storedFileCount || forceRescan) {
                         Log.i(TAG, "Change detected for ${mediaType.name} (Stored: $storedFileCount, Current: $currentFileCount). Rescanning...")
-
-                        // Perform the deep scan
                         val newItems = scanner.performDeepScanFor(mediaType)
-
-                        // Update the database
                         mediaItemDao.deleteByMediaType(mediaType.name)
                         mediaItemDao.insertAll(newItems)
-
-                        // Save the new file count to SharedPreferences
-                        prefs.edit().putInt(KEY_PREFIX_FILE_COUNT + mediaType.name, currentFileCount).apply()
+                        prefs.edit {
+                            putInt(
+                                KEY_PREFIX_FILE_COUNT + mediaType.name,
+                                currentFileCount
+                            )
+                        }
                         Log.i(TAG, "Scan complete for ${mediaType.name}. Found ${newItems.size} items.")
-
-                        // If the user is currently viewing this list, refresh it.
                         if (_currentMediaType.value == mediaType) {
                             withContext(Dispatchers.Main) {
                                 loadMedia(mediaType)
