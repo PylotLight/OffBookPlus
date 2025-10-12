@@ -11,6 +11,17 @@ android {
     namespace = "com.devlight.offbookplus"
     compileSdk = 36
 
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                if (variant.buildType.name == "release") {
+                    output.outputFileName = "OffBook+-v${variant.versionName}.apk"
+                }
+            }
+    }
+
     defaultConfig {
         applicationId = "com.devlight.offbookplus"
         minSdk = 33
@@ -20,15 +31,21 @@ android {
 
     }
 
-//    signingConfigs {
-//        create("release") {
-//            storeFile = file(project.property("APP_KEY_FILE") as String)
-//            storePassword = project.property("APP_KEYSTORE_PASSWORD") as String
-//            keyAlias = project.property("APP_KEYSTORE_ALIAS") as String
-//            keyPassword = project.property("APP_KEY_PASSWORD") as String
-//        }
-//    }
+    signingConfigs {
+        create("release") {
+            fun prop(name: String): String? =
+                (project.findProperty(name) ?:
+                rootProject.file("local.properties").takeIf { it.exists() }
+                    ?.readLines()
+                    ?.firstOrNull { it.startsWith("$name=") }
+                    ?.substringAfter("=")) as? String
 
+            storeFile = file(prop("APP_KEY_FILE") ?: "release.keystore")
+            storePassword = prop("APP_KEYSTORE_PASSWORD") ?: ""
+            keyAlias = prop("APP_KEYSTORE_ALIAS") ?: ""
+            keyPassword = prop("APP_KEY_PASSWORD") ?: ""
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -36,7 +53,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-//            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

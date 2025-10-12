@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# SQLite
+-dontwarn java.sql.**
+-dontwarn javax.sql.**
+-keep class org.sqlite.** { *; }
+
+# Annotation-processing / code-gen
+-dontwarn javax.lang.model.**
+-dontwarn javax.tools.**
