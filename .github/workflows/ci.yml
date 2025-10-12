@@ -75,10 +75,6 @@ jobs:
         run: |
           echo "${{ secrets.APP_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Test keystore
-        run: |
-          ls
-
       - name: Build signed release APK
         run: |
           ./gradlew assembleRelease \

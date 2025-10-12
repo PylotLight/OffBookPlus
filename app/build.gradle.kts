@@ -11,6 +11,17 @@ android {
     namespace = "com.devlight.offbookplus"
     compileSdk = 36
 
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                if (variant.buildType.name == "release") {
+                    output.outputFileName = "OffBook+-v${variant.versionName}.apk"
+                }
+            }
+    }
+
     defaultConfig {
         applicationId = "com.devlight.offbookplus"
         minSdk = 33
