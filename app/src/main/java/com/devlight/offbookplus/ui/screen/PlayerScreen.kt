@@ -23,13 +23,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,16 +46,17 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material3.LinearProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
-import com.devlight.offbookplus.model.MediaType // Import MediaType
+import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
-import kotlinx.coroutines.launch // Import launch
 import java.net.URLDecoder
+import java.text.DecimalFormat
 import java.util.concurrent.TimeUnit
 
 @Composable
 fun PlayerScreen(
     mediaId: String?,
     mediaType: MediaType,
+    onNavigateToSpeedControl: () -> Unit, // NEW: Speed control navigation
     onBack: () -> Unit,
     viewModel: PlaybackViewModel = viewModel()
 ) {
@@ -62,10 +64,11 @@ fun PlayerScreen(
     LaunchedEffect(mediaId, mediaType) {
         if (mediaId != null) {
             val decodedBookId = URLDecoder.decode(mediaId, "UTF-8")
-            // This will only send a command if the media isn't already loaded.
             viewModel.playMediaItem(decodedBookId, mediaType)
         }
     }
+
+    val df = DecimalFormat("0.00x")
 
     Box(modifier = Modifier.fillMaxSize()) {
         TimeText()
@@ -82,6 +85,26 @@ fun PlayerScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "${df.format(state.playbackSpeed)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                if (mediaType == MediaType.MUSIC) {
+                    Text(
+                        text = " | Shuffle: ${if (state.isShuffleEnabled) "On" else "Off"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (state.isShuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { state.progress },
@@ -148,7 +171,34 @@ fun PlayerScreen(
                 Button(onClick = { viewModel.skipToPreviousChapter() }, enabled = state.isPreviousChapterAvailable, modifier = Modifier.size(ButtonDefaults.SmallButtonSize)) {
                     Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Previous Chapter")
                 }
-                Spacer(modifier = Modifier.width(80.dp))
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                if (mediaType == MediaType.MUSIC) {
+                    Button(
+                        onClick = { viewModel.toggleShuffle() },
+                        enabled = state.isReady,
+                        modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Toggle Shuffle",
+                            tint = if (state.isShuffleEnabled) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onNavigateToSpeedControl, // Navigate to the speed screen
+                        enabled = state.isReady,
+                        modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+                    ) {
+                        Icon(imageVector = Icons.Default.Speed, contentDescription = "Playback Speed")
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Right Button: Next Chapter
                 Button(onClick = { viewModel.skipToNextChapter() }, enabled = state.isNextChapterAvailable, modifier = Modifier.size(ButtonDefaults.SmallButtonSize)) {
                     Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Next Chapter")
                 }
@@ -156,6 +206,7 @@ fun PlayerScreen(
         }
     }
 }
+
 
 @Composable
 private fun GestureButton(

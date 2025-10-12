@@ -19,10 +19,12 @@ data class PlaybackState(
     val currentChapterTitle: String = "Loading...",
     val currentChapterIndex: Int = 0,
     val currentPositionMs: Long = 0L,
-    val durationMs: Long = 1L, // Set to 1 to avoid DivisionByZero in progress bar calculations
+    val durationMs: Long = 1L,
     @Player.State val playbackState: Int = Player.STATE_IDLE,
     val isPreviousChapterAvailable: Boolean = false,
-    val isNextChapterAvailable: Boolean = false
+    val isNextChapterAvailable: Boolean = false,
+    val isShuffleEnabled: Boolean = false,
+    val playbackSpeed: Float = 1.0f
 ) {
     /** Helper property to calculate the progress for the UI (0.0f to 1.0f) */
     val progress: Float

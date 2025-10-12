@@ -15,6 +15,7 @@ import com.devlight.offbookplus.ui.screen.LibraryScreen
 import com.devlight.offbookplus.ui.screen.PlayerScreen
 import com.devlight.offbookplus.ui.screen.SettingsScreen
 import com.devlight.offbookplus.ui.screen.HomeScreen
+import com.devlight.offbookplus.ui.screen.SpeedControlScreen
 import com.devlight.offbookplus.ui.theme.AudiobookAppTheme
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
 import java.net.URLEncoder
@@ -70,8 +71,12 @@ fun WearApp() {
                 PlayerScreen(
                     mediaId = mediaId,
                     mediaType = mediaType,
+                    onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
                     onBack = { navController.popBackStack() }
                 )
+            }
+            composable(route = NavRoutes.SPEED_CONTROL_ROUTE) {
+                SpeedControlScreen()
             }
             composable(route = NavRoutes.SETTINGS_ROUTE) {
                 SettingsScreen(
@@ -88,6 +93,7 @@ object NavRoutes {
     const val HOME_ROUTE = "home"
     const val LIBRARY_ROUTE_TEMPLATE = "library/{mediaType}"
     const val PLAYER_ROUTE_TEMPLATE = "player/{mediaId}/{mediaType}"
+    const val SPEED_CONTROL_ROUTE = "speed_control"
     const val CHAPTERS_ROUTE = "chapters"
     const val SETTINGS_ROUTE = "settings"
 }
