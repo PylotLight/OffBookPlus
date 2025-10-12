@@ -6,6 +6,7 @@
 *.iml
 .gradle
 *.jks
+release.keystore
 /local.properties
 local.properties
 app/release

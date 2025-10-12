@@ -22,18 +22,17 @@ android {
 
     signingConfigs {
         create("release") {
-            val keyFile = project.findProperty("APP_KEY_FILE")?.toString()
-                ?.let { file(it) }
-                ?: file("release.keystore")
+            fun prop(name: String): String? =
+                (project.findProperty(name) ?:
+                rootProject.file("local.properties").takeIf { it.exists() }
+                    ?.readLines()
+                    ?.firstOrNull { it.startsWith("$name=") }
+                    ?.substringAfter("=")) as? String
 
-            val storePwd = project.findProperty("APP_KEYSTORE_PASSWORD")?.toString() ?: ""
-            val keyAlias = project.findProperty("APP_KEYSTORE_ALIAS")?.toString() ?: ""
-            val keyPwd = project.findProperty("APP_KEY_PASSWORD")?.toString() ?: ""
-
-            storeFile = keyFile
-            storePassword = storePwd
-            this.keyAlias = keyAlias
-            keyPassword = keyPwd
+            storeFile = file(prop("APP_KEY_FILE") ?: "release.keystore")
+            storePassword = prop("APP_KEYSTORE_PASSWORD") ?: ""
+            keyAlias = prop("APP_KEYSTORE_ALIAS") ?: ""
+            keyPassword = prop("APP_KEY_PASSWORD") ?: ""
         }
     }
     buildTypes {
