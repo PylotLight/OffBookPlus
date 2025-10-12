@@ -18,14 +18,14 @@ android {
 
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file(project.property("APP_KEY_FILE") as String)
-            storePassword = project.property("APP_KEYSTORE_PASSWORD") as String
-            keyAlias = project.property("APP_KEYSTORE_ALIAS") as String
-            keyPassword = project.property("APP_KEY_PASSWORD") as String
-        }
-    }
+//    signingConfigs {
+//        create("release") {
+//            storeFile = file(project.property("APP_KEY_FILE") as String)
+//            storePassword = project.property("APP_KEYSTORE_PASSWORD") as String
+//            keyAlias = project.property("APP_KEYSTORE_ALIAS") as String
+//            keyPassword = project.property("APP_KEY_PASSWORD") as String
+//        }
+//    }
 
     buildTypes {
         release {
@@ -34,7 +34,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+//            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
