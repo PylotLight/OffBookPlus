@@ -5,7 +5,6 @@
 *.log
 *.iml
 .gradle
-gradle.properties
 *.jks
 /local.properties
 local.properties
