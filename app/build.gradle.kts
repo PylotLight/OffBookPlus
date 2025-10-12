@@ -20,15 +20,22 @@ android {
 
     }
 
-//    signingConfigs {
-//        create("release") {
-//            storeFile = file(project.property("APP_KEY_FILE") as String)
-//            storePassword = project.property("APP_KEYSTORE_PASSWORD") as String
-//            keyAlias = project.property("APP_KEYSTORE_ALIAS") as String
-//            keyPassword = project.property("APP_KEY_PASSWORD") as String
-//        }
-//    }
+    signingConfigs {
+        create("release") {
+            val keyFile = project.findProperty("APP_KEY_FILE")?.toString()
+                ?.let { file(it) }
+                ?: file("release.keystore")          // fallback name
 
+            val storePwd = project.findProperty("APP_KEYSTORE_PASSWORD")?.toString() ?: ""
+            val keyAlias = project.findProperty("APP_KEYSTORE_ALIAS")?.toString() ?: ""
+            val keyPwd = project.findProperty("APP_KEY_PASSWORD")?.toString() ?: ""
+
+            storeFile = keyFile
+            storePassword = storePwd
+            this.keyAlias = keyAlias
+            keyPassword = keyPwd
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -36,7 +43,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-//            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
