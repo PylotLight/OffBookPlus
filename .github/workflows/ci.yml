@@ -78,7 +78,7 @@ jobs:
       - name: Build signed release APK
         run: |
           ./gradlew assembleRelease \
-            -PAPP_KEY_FILE=app/release.keystore \
+            -PAPP_KEY_FILE=release.keystore \
             -PAPP_KEYSTORE_PASSWORD=${{ secrets.APP_KEYSTORE_PASSWORD }} \
             -PAPP_KEYSTORE_ALIAS=${{ secrets.APP_KEYSTORE_ALIAS }} \
             -PAPP_KEY_PASSWORD=${{ secrets.APP_KEY_PASSWORD }}
