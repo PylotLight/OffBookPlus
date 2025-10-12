@@ -14,16 +14,16 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1"
 
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file(project.property("OFFBOOKPLUS_RELEASE_STORE_FILE") as String)
-            storePassword = project.property("OFFBOOKPLUS_RELEASE_STORE_PASSWORD") as String
-            keyAlias = project.property("OFFBOOKPLUS_RELEASE_KEY_ALIAS") as String
-            keyPassword = project.property("OFFBOOKPLUS_RELEASE_KEY_PASSWORD") as String
+            storeFile = file(project.property("APP_KEY_FILE") as String)
+            storePassword = project.property("APP_KEYSTORE_PASSWORD") as String
+            keyAlias = project.property("APP_KEYSTORE_ALIAS") as String
+            keyPassword = project.property("APP_KEY_PASSWORD") as String
         }
     }
 

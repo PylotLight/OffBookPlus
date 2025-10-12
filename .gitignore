@@ -8,6 +8,8 @@
 gradle.properties
 *.jks
 /local.properties
+local.properties
+app/release
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -19,7 +21,7 @@ gradle.properties
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
 # BlueJ files
 *.ctxt
 
