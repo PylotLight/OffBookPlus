@@ -26,17 +26,19 @@ class LocalFileScanner(private val context: Context) {
         return File(storageDir, mediaType.directoryName)
     }
     /**
-     * A very fast function that ONLY counts the number of valid media files in a directory.
-     * It performs no I/O other than listing files.
+     * A very fast function that ONLY counts the number of valid media files in a directory
+     * and returns the last modified timestamp of the root media directory.
      */
-    fun getDirectoryFileCount(mediaType: MediaType): Int {
+    fun getDirectoryState(mediaType: MediaType): Pair<Int, Long> {
         val mediaDir = getMediaDirectory(mediaType)
         val validExtensions = getValidExtensions(mediaType)
 
         if (!mediaDir.exists() || !mediaDir.isDirectory) {
-            return 0
+            return Pair(0, 0L)
         }
-        return mediaDir.walk().asSequence().count { it.isFile && it.extension.lowercase() in validExtensions }
+        val fileCount = mediaDir.walk().asSequence().count { it.isFile && it.extension.lowercase() in validExtensions }
+        val lastModified = mediaDir.lastModified() // Get timestamp of the root directory
+        return Pair(fileCount, lastModified)
     }
 
     /**
@@ -60,7 +62,12 @@ class LocalFileScanner(private val context: Context) {
             .forEachIndexed { index, file ->
                 val extractedData = runBlocking { ChapterExtractor.extract(context, Uri.fromFile(file)) }
                 val fileUri = Uri.fromFile(file).toString()
-                val playlistId = (file.parentFile?.name ?: "unknown_album").replace("\\s".toRegex(), "_").lowercase()
+
+                val playlistId = if (mediaType == MediaType.MUSIC) {
+                    "all_music_tracks"
+                } else {
+                    (file.parentFile?.name ?: "unknown_album").replace("\\s".toRegex(), "_").lowercase()
+                }
 
                 items.add(
                     MediaItemEntity(

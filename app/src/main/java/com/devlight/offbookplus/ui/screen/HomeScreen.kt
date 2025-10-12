@@ -24,7 +24,7 @@ import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.NavRoutes
 
 @Composable
-fun HomeScreen( // Renamed for clarity
+fun HomeScreen(
     onNavigate: (String) -> Unit
 ) {
     val items = listOf(

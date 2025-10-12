@@ -32,7 +32,7 @@ fun LibraryScreen(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(mediaType) {
-        libraryViewModel.loadMedia(mediaType)
+        libraryViewModel.checkAndLoadMedia(mediaType)
     }
 
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
