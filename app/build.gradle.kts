@@ -24,7 +24,7 @@ android {
         create("release") {
             val keyFile = project.findProperty("APP_KEY_FILE")?.toString()
                 ?.let { file(it) }
-                ?: file("release.keystore")          // fallback name
+                ?: file("release.keystore")
 
             val storePwd = project.findProperty("APP_KEYSTORE_PASSWORD")?.toString() ?: ""
             val keyAlias = project.findProperty("APP_KEYSTORE_ALIAS")?.toString() ?: ""
