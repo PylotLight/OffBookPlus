@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    kotlin("plugin.serialization") version "2.2.0"
     id("com.google.devtools.ksp")
 }
 
@@ -27,7 +28,7 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.0.0"
 
     }
 
@@ -94,6 +95,8 @@ dependencies {
     androidTestImplementation(libs.ui.test.junit4)
     debugImplementation(libs.ui.tooling)
     debugImplementation(libs.ui.test.manifest)
+    implementation(libs.kotlinx.serialization.json)
+
 
     //
     implementation(libs.horologist.compose.layout)

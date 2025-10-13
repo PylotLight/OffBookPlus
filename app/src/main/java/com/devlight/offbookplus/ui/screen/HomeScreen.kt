@@ -48,7 +48,7 @@ fun HomeScreen(
             )
         }
         items(items) { item ->
-            Box(modifier = Modifier.fillMaxWidth()) { // Box with fillMaxWidth to force Chip width
+            Box(modifier = Modifier.fillMaxWidth()) {
                 Chip(
                     onClick = {
                         val route = if (item.mediaType != null) {

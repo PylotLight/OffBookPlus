@@ -20,7 +20,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 import java.text.DecimalFormat
 
-private val speedOptions = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+private val speedOptions = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 2.75f, 3.0f)
 private val df = DecimalFormat("0.00x")
 
 @Composable
@@ -31,7 +31,9 @@ fun SpeedControlScreen(
     val currentSpeed = state.playbackSpeed
 
     ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item {
@@ -54,7 +56,9 @@ fun SpeedControlScreen(
         speedOptions.chunked(2).forEach { rowSpeeds ->
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     rowSpeeds.forEach { speed ->
@@ -67,11 +71,15 @@ fun SpeedControlScreen(
                             } else {
                                 androidx.wear.compose.material.ChipDefaults.secondaryChipColors()
                             },
-                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp)
                         )
                     }
                     if (rowSpeeds.size < 2) {
-                        Spacer(modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+                        Spacer(modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp))
                     }
                 }
                 Spacer(modifier = Modifier.padding(bottom = 8.dp))

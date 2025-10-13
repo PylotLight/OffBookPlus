@@ -73,7 +73,9 @@ fun PlayerScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         TimeText()
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 4.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -87,7 +89,9 @@ fun PlayerScreen(
             )
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
@@ -128,7 +132,10 @@ fun PlayerScreen(
                     onLongClick = { viewModel.seekToPosition(state.currentPositionMs - 900000) },
                     enabled = state.isReady
                 ) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Rewind")
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Rewind"
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -149,7 +156,11 @@ fun PlayerScreen(
                         state.isPlaying -> Icons.Default.Pause
                         else -> Icons.Default.PlayArrow
                     }
-                    Icon(imageVector = icon, contentDescription = "Play/Pause/Replay", modifier = Modifier.size(ButtonDefaults.LargeIconSize))
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = "Play/Pause/Replay",
+                        modifier = Modifier.size(ButtonDefaults.LargeIconSize)
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -160,16 +171,28 @@ fun PlayerScreen(
                     onLongClick = { viewModel.seekToPosition(state.currentPositionMs + 900000) },
                     enabled = state.isReady
                 ) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Forward"
+                    )
                 }
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                Button(onClick = { viewModel.skipToPreviousChapter() }, enabled = state.isPreviousChapterAvailable, modifier = Modifier.size(ButtonDefaults.SmallButtonSize)) {
-                    Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Previous Chapter")
+                Button(
+                    onClick = { viewModel.skipToPreviousChapter() },
+                    enabled = state.isPreviousChapterAvailable,
+                    modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SkipPrevious,
+                        contentDescription = "Previous Chapter"
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -192,14 +215,21 @@ fun PlayerScreen(
                         enabled = state.isReady,
                         modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
                     ) {
-                        Icon(imageVector = Icons.Default.Speed, contentDescription = "Playback Speed")
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = "Playback Speed"
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
 
                 // Right Button: Next Chapter
-                Button(onClick = { viewModel.skipToNextChapter() }, enabled = state.isNextChapterAvailable, modifier = Modifier.size(ButtonDefaults.SmallButtonSize)) {
+                Button(
+                    onClick = { viewModel.skipToNextChapter() },
+                    enabled = state.isNextChapterAvailable,
+                    modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+                ) {
                     Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Next Chapter")
                 }
             }
@@ -216,7 +246,10 @@ private fun GestureButton(
     enabled: Boolean,
     content: @Composable () -> Unit
 ) {
-    val backgroundColor = if (enabled) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val backgroundColor =
+        if (enabled) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.onSurface.copy(
+            alpha = 0.12f
+        )
 
     Box(
         contentAlignment = Alignment.Center,
@@ -242,5 +275,9 @@ private fun formatTime(ms: Long): String {
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
-    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds) else String.format("%02d:%02d", minutes, seconds)
+    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds) else String.format(
+        "%02d:%02d",
+        minutes,
+        seconds
+    )
 }
