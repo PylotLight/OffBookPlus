@@ -20,7 +20,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 import java.text.DecimalFormat
 
-private val speedOptions = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+private val speedOptions = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 2.75f,3.0f)
 private val df = DecimalFormat("0.00x")
 
 @Composable

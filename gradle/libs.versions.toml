@@ -9,6 +9,7 @@ horologistComposeMaterial = "0.7.15"
 horologistMedia3Backend = "0.7.15"
 horologistMediaUi = "0.7.15"
 kotlin = "2.2.20"
+kotlinxSerializationJson = "1.9.0"
 media3Common = "1.8.0"
 media3Container = "1.8.0"
 media3Extractor = "1.8.0"
@@ -39,6 +40,7 @@ google-horologist-compose-material = { module = "com.google.android.horologist:h
 google-horologist-media-ui = { module = "com.google.android.horologist:horologist-media-ui", version.ref = "horologistMediaUi" }
 google-horologist-media3-backend = { module = "com.google.android.horologist:horologist-media3-backend", version.ref = "horologistMedia3Backend" }
 horologist-compose-layout = { module = "com.google.android.horologist:horologist-compose-layout", version.ref = "horologistComposeLayout" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Common" }
 media3-container = { module = "androidx.media3:media3-container", version.ref = "media3Container" }
 media3-extractor-m4b = { module = "com.dotslashlabs:media3-extractor-m4b", version.ref = "media3ExtractorM4b" }

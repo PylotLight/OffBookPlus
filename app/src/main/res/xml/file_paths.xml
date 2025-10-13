@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <paths>
+        <!--
+            This path grants access to files in the app's *external* files directory.
+            This corresponds to context.getExternalFilesDir(null) which is
+            /storage/emulated/0/Android/data/YOUR_PACKAGE_NAME/files/
+            Make sure the 'path' attribute matches the sub-directory within that location.
+            A path="." means the root of getExternalFilesDir(null).
+        -->
+        <external-files-path name="apk_updates" path="."/>
+    </paths>
+</resources>
