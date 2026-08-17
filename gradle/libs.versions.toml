@@ -16,7 +16,7 @@ activityCompose = "1.13.0"
 coreSplashscreen = "1.2.0"
 room = "2.8.4"
 materialIconsCore = "1.7.8"
-sqlite = "2.6.1"
+sqlite = "2.7.0"
 
 [libraries]
 androidx-concurrent-futures-ktx = { module = "androidx.concurrent:concurrent-futures-ktx", version.ref = "concurrentFuturesKtx" }
