@@ -9,7 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material.Text
@@ -26,7 +25,7 @@ fun LibraryScreen(
     mediaType: MediaType,
     onItemClick: (mediaId: String, mediaType: MediaType) -> Unit,
     libraryViewModel: LibraryViewModel,
-    playbackViewModel: PlaybackViewModel = viewModel()
+    playbackViewModel: PlaybackViewModel
 ) {
     val mediaItems by libraryViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -36,6 +35,14 @@ fun LibraryScreen(
     }
 
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            NowPlayingBar(
+                playbackViewModel = playbackViewModel,
+                onOpenNowPlaying = {
+                    onItemClick(playbackViewModel.playbackState.value.mediaId, playbackViewModel.playbackState.value.mediaType)
+                }
+            )
+        }
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
         }

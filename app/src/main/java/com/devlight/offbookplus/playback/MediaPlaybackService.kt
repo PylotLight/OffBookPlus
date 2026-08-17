@@ -3,6 +3,7 @@
 package com.devlight.offbookplus.playback
 
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -18,6 +19,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.devlight.offbookplus.data.AppDatabase
+import com.devlight.offbookplus.data.PlayHistoryRecorder
 import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.model.MediaType
 import com.google.common.util.concurrent.Futures
@@ -27,20 +29,53 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val TAG = "MediaPlaybackService"
+private const val HISTORY_FLUSH_INTERVAL_MS = 60_000L
+private const val HISTORY_TICK_MS = 30_000L
+private const val HISTORY_MIN_RECORD_MS = 1_000L
 
 class MediaPlaybackService : MediaSessionService() {
 
     private lateinit var exoPlayer: ExoPlayer
     private lateinit var mediaSession: MediaSession
+    private lateinit var historyRecorder: PlayHistoryRecorder
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // History writes use their own scope so the final flush survives service destruction.
+    private val historyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // --- Play history accounting (battery-conscious: no per-second writes) ---
+    private var currentSessionItemId: String? = null
+    private var playingSegmentStartElapsed = 0L
+    private var pendingPlayTimeMs = 0L
+    private var lastPlayCountedItemId: String? = null
+    private var periodicFlushJob: kotlinx.coroutines.Job? = null
+
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) { Log.e(TAG, "!!! ExoPlayer ERROR !!!", error) }
-        override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) saveCurrentProgress() }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { saveCurrentProgress() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                countPlayForCurrentMediaItem()
+                beginPlaySegment()
+            } else {
+                endPlaySegment()
+                saveCurrentProgress()
+            }
+        }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            endPlaySegment()
+            currentSessionItemId = mediaItem?.mediaId
+            pendingPlayTimeMs = 0L
+            if (exoPlayer.isPlaying) {
+                beginPlaySegment()
+                countPlayForCurrentMediaItem()
+            }
+            saveCurrentProgress()
+        }
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { saveCurrentProgress() }
     }
 
@@ -186,8 +221,95 @@ class MediaPlaybackService : MediaSessionService() {
             Log.d(TAG, "Saved $mediaType progress for '$playlistId'")
         }
     }
+
+    // --- Play history helpers ---
+
+    private fun elapsedPlayMs(): Long {
+        if (playingSegmentStartElapsed == 0L) return 0L
+        return SystemClock.elapsedRealtime() - playingSegmentStartElapsed
+    }
+
+    private fun totalAccruedMs(): Long = pendingPlayTimeMs + elapsedPlayMs()
+
+    private fun beginPlaySegment() {
+        playingSegmentStartElapsed = SystemClock.elapsedRealtime()
+    }
+
+    /**
+     * Finishes the current play segment: persists accrued time for the current item.
+     * If playback is still going (e.g. mid-transition) the caller restarts a segment.
+     */
+    private fun endPlaySegment() {
+        val itemId = currentSessionItemId
+        val accrued = totalAccruedMs()
+        playingSegmentStartElapsed = 0L
+        if (itemId == null) {
+            pendingPlayTimeMs = 0L
+            return
+        }
+        if (accrued >= HISTORY_MIN_RECORD_MS) {
+            persistPlayTime(itemId, accrued)
+            pendingPlayTimeMs = 0L
+        } else {
+            pendingPlayTimeMs = accrued
+        }
+    }
+
+    /**
+     * Periodic safety-net so long uninterrupted sessions still persist time at least once
+     * a minute (prevents losing lots of playtime if the process is ever killed).
+     */
+    private fun periodicHistoryFlush() {
+        val itemId = currentSessionItemId ?: return
+        if (playingSegmentStartElapsed == 0L) return
+        val accrued = totalAccruedMs()
+        if (accrued >= HISTORY_FLUSH_INTERVAL_MS) {
+            persistPlayTime(itemId, accrued)
+            pendingPlayTimeMs = 0L
+            playingSegmentStartElapsed = SystemClock.elapsedRealtime()
+        }
+    }
+
+    private fun persistPlayTime(itemId: String, timeMs: Long) {
+        if (timeMs <= 0) return
+        historyScope.launch {
+            try {
+                historyRecorder.addPlayTime(itemId, timeMs)
+                Log.d(TAG, "History += ${timeMs}ms for '$itemId'")
+            } catch (e: Exception) {
+                Log.w(TAG, "Play history write failed", e)
+            }
+        }
+    }
+
+    private fun countPlayForCurrentMediaItem() {
+        val mediaItem = exoPlayer.currentMediaItem ?: return
+        val mediaId = mediaItem.mediaId
+        if (lastPlayCountedItemId == mediaId) return
+        lastPlayCountedItemId = mediaId
+        val metadata = mediaItem.mediaMetadata
+        val mediaType = try {
+            metadata.extras?.getString("MEDIA_TYPE")?.let { MediaType.valueOf(it) }
+        } catch (e: Exception) { null } ?: MediaType.AUDIOBOOKS
+        historyScope.launch {
+            try {
+                historyRecorder.recordPlayStarted(
+                    mediaId = mediaId,
+                    playlistId = metadata.albumTitle?.toString() ?: "",
+                    mediaType = mediaType,
+                    title = metadata.title?.toString() ?: "Unknown",
+                    artist = metadata.artist?.toString() ?: ""
+                )
+                Log.d(TAG, "Play counted for '$mediaId'")
+            } catch (e: Exception) {
+                Log.w(TAG, "Play count write failed", e)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        historyRecorder = PlayHistoryRecorder(AppDatabase.getInstance(applicationContext))
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
         exoPlayer = ExoPlayer.Builder(this).setAudioAttributes(audioAttributes, true).build()
 
@@ -203,11 +325,20 @@ class MediaPlaybackService : MediaSessionService() {
 
         exoPlayer.addListener(playerListener)
         mediaSession = MediaSession.Builder(this, exoPlayer).setCallback(MediaSessionCallback()).build()
+
+        periodicFlushJob = serviceScope.launch {
+            while (isActive) {
+                delay(HISTORY_TICK_MS)
+                periodicHistoryFlush()
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        endPlaySegment()
+        periodicFlushJob?.cancel()
         saveCurrentProgress()
         serviceScope.cancel()
         mediaSession.release()

@@ -11,13 +11,17 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.devlight.offbookplus.model.MediaType
+import com.devlight.offbookplus.ui.screen.HomeScreen
+import com.devlight.offbookplus.ui.screen.HistoryScreen
 import com.devlight.offbookplus.ui.screen.LibraryScreen
 import com.devlight.offbookplus.ui.screen.PlayerScreen
 import com.devlight.offbookplus.ui.screen.SettingsScreen
-import com.devlight.offbookplus.ui.screen.HomeScreen
 import com.devlight.offbookplus.ui.screen.SpeedControlScreen
+import com.devlight.offbookplus.ui.screen.UpdatesScreen
 import com.devlight.offbookplus.ui.theme.AudiobookAppTheme
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
+import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
+import com.devlight.offbookplus.ui.viewmodel.UpdatesViewModel
 import java.net.URLEncoder
 
 @Composable
@@ -25,6 +29,8 @@ fun WearApp() {
     AudiobookAppTheme {
         val navController = rememberSwipeDismissableNavController()
         val libraryViewModel: LibraryViewModel = viewModel()
+        val playbackViewModel: PlaybackViewModel = viewModel()
+        val updatesViewModel: UpdatesViewModel = viewModel()
 
         SwipeDismissableNavHost(
             navController = navController,
@@ -33,7 +39,11 @@ fun WearApp() {
         ) {
             composable(route = NavRoutes.HOME_ROUTE) {
                 HomeScreen(
-                    onNavigate = { route -> navController.navigate(route) }
+                    onNavigate = { route -> navController.navigate(route) },
+                    playbackViewModel = playbackViewModel,
+                    onOpenNowPlaying = {
+                        navController.navigate(NavRoutes.playerRouteForCurrent(playbackViewModel))
+                    }
                 )
             }
 
@@ -47,13 +57,10 @@ fun WearApp() {
                 LibraryScreen(
                     mediaType = mediaType,
                     onItemClick = { mediaId, mediaTypeForNav ->
-                        val encodedmediaId = URLEncoder.encode(mediaId, "UTF-8")
-                        val route = NavRoutes.PLAYER_ROUTE_TEMPLATE
-                            .replace("{mediaId}", encodedmediaId)
-                            .replace("{mediaType}", mediaTypeForNav.name)
-                        navController.navigate(route)
+                        navController.navigate(NavRoutes.playerRoute(mediaId, mediaTypeForNav))
                     },
-                    libraryViewModel = libraryViewModel
+                    libraryViewModel = libraryViewModel,
+                    playbackViewModel = playbackViewModel
                 )
             }
 
@@ -84,6 +91,16 @@ fun WearApp() {
                     viewModel = libraryViewModel
                 )
             }
+            composable(route = NavRoutes.HISTORY_ROUTE) {
+                HistoryScreen(
+                    onPlayMedia = { mediaId, mediaType ->
+                        navController.navigate(NavRoutes.playerRoute(mediaId, mediaType))
+                    }
+                )
+            }
+            composable(route = NavRoutes.UPDATES_ROUTE) {
+                UpdatesScreen(viewModel = updatesViewModel)
+            }
         }
     }
 }
@@ -96,4 +113,18 @@ object NavRoutes {
     const val SPEED_CONTROL_ROUTE = "speed_control"
     const val CHAPTERS_ROUTE = "chapters"
     const val SETTINGS_ROUTE = "settings"
+    const val HISTORY_ROUTE = "history"
+    const val UPDATES_ROUTE = "updates"
+
+    fun playerRoute(mediaId: String, mediaType: MediaType): String {
+        val encodedId = URLEncoder.encode(mediaId, "UTF-8")
+        return PLAYER_ROUTE_TEMPLATE
+            .replace("{mediaId}", encodedId)
+            .replace("{mediaType}", mediaType.name)
+    }
+
+    fun playerRouteForCurrent(playbackViewModel: PlaybackViewModel): String {
+        val state = playbackViewModel.playbackState.value
+        return playerRoute(state.mediaId, state.mediaType)
+    }
 }
