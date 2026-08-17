@@ -1,9 +1,5 @@
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -12,17 +8,6 @@ plugins {
 android {
     namespace = "com.devlight.offbookplus"
     compileSdk = 36
-
-    applicationVariants.all {
-        val variant = this
-        variant.outputs
-            .map { it as BaseVariantOutputImpl }
-            .forEach { output ->
-                if (variant.buildType.name == "release") {
-                    output.outputFileName = "OffBook+-v${variant.versionName}.apk"
-                }
-            }
-    }
 
     defaultConfig {
         applicationId = "com.devlight.offbookplus"
@@ -61,14 +46,20 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
-    kotlin {
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_21
-        }
-    }
     useLibrary("wear-sdk")
     buildFeatures {
         compose = true
+    }
+    lint {
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("OffBook+-v${output.versionName.get()}.apk")
+        }
     }
 }
 configurations.all {
