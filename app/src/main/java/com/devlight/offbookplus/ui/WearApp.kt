@@ -88,7 +88,8 @@ fun WearApp() {
             composable(route = NavRoutes.SETTINGS_ROUTE) {
                 SettingsScreen(
                     // Pass the same shared ViewModel instance here as well.
-                    viewModel = libraryViewModel
+                    viewModel = libraryViewModel,
+                    onNavigate = { route -> navController.navigate(route) }
                 )
             }
             composable(route = NavRoutes.HISTORY_ROUTE) {
