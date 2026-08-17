@@ -29,6 +29,12 @@ interface ProgressDao {
 
 
     /**
+     * Retrieve the single most recently played progress across all playlists.
+     */
+    @Query("SELECT * FROM playback_progress ORDER BY lastUpdatedTimestamp DESC LIMIT 1")
+    suspend fun getMostRecentProgress(): PlaybackProgressEntity?
+
+    /**
      * Optionally, retrieve all saved progress records (e.g., for a 'Recently Played' feature).
      */
     @Query("SELECT * FROM playback_progress ORDER BY lastUpdatedTimestamp DESC")

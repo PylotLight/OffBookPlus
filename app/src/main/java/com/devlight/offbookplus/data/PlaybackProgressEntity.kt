@@ -9,5 +9,6 @@ data class PlaybackProgressEntity(
     val playlistId: String,
     val trackIndex: Int = 0,
     val playbackPositionMs: Long,
+    val shuffleModeEnabled: Boolean = false,
     val lastUpdatedTimestamp: Long = System.currentTimeMillis()
 )

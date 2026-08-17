@@ -22,6 +22,7 @@ import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.model.MediaType
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,6 +40,8 @@ class MediaPlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) { Log.e(TAG, "!!! ExoPlayer ERROR !!!", error) }
         override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) saveCurrentProgress() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { saveCurrentProgress() }
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { saveCurrentProgress() }
     }
 
 
@@ -61,7 +64,41 @@ class MediaPlaybackService : MediaSessionService() {
                 val mediaItems = List(exoPlayer.mediaItemCount) { exoPlayer.getMediaItemAt(it) }
                 return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(mediaItems, exoPlayer.currentMediaItemIndex, exoPlayer.currentPosition))
             }
-            return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(emptyList(), C.INDEX_UNSET, C.TIME_UNSET))
+            
+            val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            serviceScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    val db = AppDatabase.getInstance(applicationContext)
+                    val recentProgress = db.progressDao().getMostRecentProgress()
+                    if (recentProgress != null) {
+                        val items = db.mediaItemDao().getItemsByPlaylistId(recentProgress.playlistId)
+                        if (items.isNotEmpty()) {
+                            val mediaItems = items.map { item ->
+                                val metadata = MediaMetadata.Builder()
+                                    .setAlbumTitle(item.playlistId)
+                                    .setTitle(item.title)
+                                    .setArtist(item.artist)
+                                    .setTrackNumber(item.trackNumber)
+                                    .setExtras(Bundle().apply { putString("MEDIA_TYPE", item.mediaType.name) })
+                                    .build()
+                                MediaItem.Builder()
+                                    .setMediaId(item.id)
+                                    .setUri(item.fileUri)
+                                    .setMediaMetadata(metadata)
+                                    .build()
+                            }
+                            // Restore shuffle mode
+                            withContext(Dispatchers.Main) {
+                                exoPlayer.shuffleModeEnabled = recentProgress.shuffleModeEnabled
+                            }
+                            return@withContext MediaSession.MediaItemsWithStartPosition(mediaItems, recentProgress.trackIndex, recentProgress.playbackPositionMs)
+                        }
+                    }
+                    MediaSession.MediaItemsWithStartPosition(emptyList(), C.INDEX_UNSET, C.TIME_UNSET)
+                }
+                future.set(result)
+            }
+            return future
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
@@ -108,7 +145,20 @@ class MediaPlaybackService : MediaSessionService() {
 
                 exoPlayer.stop()
                 exoPlayer.clearMediaItems()
-                exoPlayer.setMediaItems(mediaItems, progress?.trackIndex ?: startIndex, progress?.playbackPositionMs ?: 0L)
+                
+                val actualTrackIndex = if (progress != null && (startIndex == progress.trackIndex || startIndex == 0)) {
+                    progress.trackIndex
+                } else {
+                    startIndex
+                }
+                val actualPosition = if (progress != null && actualTrackIndex == progress.trackIndex) {
+                    progress.playbackPositionMs
+                } else {
+                    0L
+                }
+                
+                exoPlayer.shuffleModeEnabled = progress?.shuffleModeEnabled ?: false
+                exoPlayer.setMediaItems(mediaItems, actualTrackIndex, actualPosition)
                 exoPlayer.prepare()
                 exoPlayer.play()
             }
@@ -119,21 +169,21 @@ class MediaPlaybackService : MediaSessionService() {
         val mediaTypeString = mediaItem.mediaMetadata.extras?.getString("MEDIA_TYPE")
         val mediaType = try { MediaType.valueOf(mediaTypeString ?: "") } catch (e: Exception) { null }
 
-        if (mediaType != MediaType.AUDIOBOOKS) {
-            return
-        }
-
         val playlistId = mediaItem.mediaMetadata.albumTitle?.toString() ?: return
-        if (exoPlayer.currentPosition > 0 && exoPlayer.currentPosition < exoPlayer.duration - 1000) {
-            val progress = PlaybackProgressEntity(
-                playlistId = playlistId,
-                trackIndex = exoPlayer.currentMediaItemIndex,
-                playbackPositionMs = exoPlayer.currentPosition
-            )
-            serviceScope.launch(Dispatchers.IO) {
-                AppDatabase.getInstance(applicationContext).progressDao().saveProgress(progress)
-                Log.d(TAG, "Saved Audiobook progress for '$playlistId'")
-            }
+        val position = if (exoPlayer.currentPosition > 0 && (exoPlayer.duration <= 0 || exoPlayer.currentPosition < exoPlayer.duration - 1000)) {
+            exoPlayer.currentPosition
+        } else {
+            0L
+        }
+        val progress = PlaybackProgressEntity(
+            playlistId = playlistId,
+            trackIndex = exoPlayer.currentMediaItemIndex,
+            playbackPositionMs = position,
+            shuffleModeEnabled = exoPlayer.shuffleModeEnabled
+        )
+        serviceScope.launch(Dispatchers.IO) {
+            AppDatabase.getInstance(applicationContext).progressDao().saveProgress(progress)
+            Log.d(TAG, "Saved $mediaType progress for '$playlistId'")
         }
     }
     override fun onCreate() {

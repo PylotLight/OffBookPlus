@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    kotlin("plugin.serialization") version "2.2.0"
+    alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
 }
 
@@ -29,7 +29,6 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.0.0"
-
     }
 
     signingConfigs {
@@ -87,7 +86,6 @@ dependencies {
     implementation(libs.wear.tooling.preview)
     implementation(libs.activity.compose)
     implementation(libs.core.splashscreen)
-    implementation(libs.room.compiler)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.sqlite.framework)
     implementation(libs.androidx.sqlite.bundled)
@@ -119,7 +117,6 @@ dependencies {
     implementation(libs.media3.container)
     implementation(libs.media3.common)
     implementation(libs.androidx.room.runtime)
-    annotationProcessor(libs.room.compiler)
     implementation(libs.androidx.room.ktx)
 
     // The m4b extractor can remain as 'implementation' now

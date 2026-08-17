@@ -13,10 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 
-
 private const val TAG = "ChapterExtractor"
 
-// A clean data class to hold all extracted information
 data class ExtractedAudiobookData(
     val title: String,
     val artist: String?,
@@ -42,13 +40,11 @@ object ChapterExtractor {
 
                 for (i in 0 until trackGroups.length) {
                     val format = trackGroups[i].getFormat(0)
-                    // --- NEW: DETAILED TRACK GROUP LOGGING ---
                     Log.d(TAG, "  > Track Group $i Info: mimeType=${format.sampleMimeType}, id=${format.id}, language=${format.language}")
                     format.metadata?.let { metadata ->
                         Log.d(TAG, "    > Track $i has ${metadata.length()} metadata entries.")
                         for (j in 0 until metadata.length()) {
                             val entry = metadata.get(j)
-                            // Log every single metadata entry's type and value
                             Log.v(TAG, "      - Entry $j: Type = ${entry.javaClass.simpleName}, Value = $entry")
                             if (entry is ChapterFrame) {
                                 chapters.add(entry)
