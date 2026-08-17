@@ -1,32 +1,28 @@
 package com.devlight.offbookplus.ui.viewmodel
 
 import android.app.Application
-import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.SharedPreferences
-//import android.database.Cursor
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
-import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.devlight.offbookplus.data.AppDatabase
 import com.devlight.offbookplus.data.GitHubRelease
 import com.devlight.offbookplus.data.LocalFileScanner
+import com.devlight.offbookplus.data.UpdateDownloader
 import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -50,6 +46,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         const val PREFS_NAME = "LibraryStatePrefs"
         const val KEY_PREFIX_FILE_COUNT = "file_count_"
         const val KEY_PREFIX_LAST_MODIFIED = "last_modified_"
+        const val KEY_UPDATE_DOWNLOAD_URL = "update_download_url"
     }
 
     private var downloadJob: Job? = null
@@ -60,6 +57,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val _updateStatus = MutableStateFlow(UpdateStatus.IDLE)
     val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
+    private val _downloadProgress = MutableStateFlow(0)
+    val downloadProgress: StateFlow<Int> = _downloadProgress.asStateFlow()
     private val mediaItemDao = AppDatabase.getInstance(application).mediaItemDao()
     private val prefs: SharedPreferences =
         application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -150,89 +149,40 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
 
         _updateStatus.value = UpdateStatus.DOWNLOADING
+        _downloadProgress.value = 0
 
-        val downloadManager =
-            getApplication<Application>().getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val request = DownloadManager.Request(url.toUri())
-            .setTitle("Off-Book+ Update")
-            .setDescription("Downloading latest version...")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalFilesDir(getApplication(), null, "update.apk")
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
+        val app = getApplication<Application>()
+        val apkFile = File(app.getExternalFilesDir(null), "update.apk")
 
-        File(getApplication<Application>().getExternalFilesDir(null), "update.apk").delete()
+        // If a newer update is being downloaded, drop the old partial file so we don't
+        // resume with bytes from a different APK.
+        val previousUrl = prefs.getString(KEY_UPDATE_DOWNLOAD_URL, null)
+        if (previousUrl != null && previousUrl != url) {
+            Log.i(TAG, "Update URL changed, discarding partial download.")
+            apkFile.delete()
+        }
 
-        val downloadId = downloadManager.enqueue(request)
-        Log.i(TAG, "Download started with ID: $downloadId")
-
-        startDownloadProgressPolling(downloadManager, downloadId)
-
-    }
-
-    private fun startDownloadProgressPolling(downloadManager: DownloadManager, downloadId: Long) {
         downloadJob?.cancel()
-        downloadJob = viewModelScope.launch {
-            var isDownloading = true
-            while (isDownloading && isActive) {
-                val query = DownloadManager.Query().setFilterById(downloadId)
-                val cursor = downloadManager.query(query)
-                if (cursor.moveToFirst()) {
-                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                    val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                    val bytesDownloadedIndex =
-                        cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                    val bytesTotalIndex =
-                        cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-
-                    val status = cursor.getInt(statusIndex)
-                    val reason = cursor.getInt(reasonIndex)
-                    val downloaded = cursor.getLong(bytesDownloadedIndex)
-                    val total = cursor.getLong(bytesTotalIndex)
-
-                    val progress =
-                        if (total > 0) (downloaded.toFloat() / total.toFloat() * 100).toInt() else 0
-
-                    when (status) {
-                        DownloadManager.STATUS_SUCCESSFUL -> {
-                            Log.i(TAG, "Download SUCCESSFUL. Initiating install.")
-                            _updateStatus.value = UpdateStatus.DOWNLOAD_COMPLETE
-                            isDownloading = false
-                            initiateInstall(downloadManager, downloadId)
-                        }
-
-                        DownloadManager.STATUS_FAILED -> {
-                            Log.e(TAG, "Download FAILED. Reason: $reason")
-                            _updateStatus.value = UpdateStatus.ERROR
-                            isDownloading = false
-                        }
-
-                        DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING -> {
-                            Log.d(
-                                TAG,
-                                "Download in progress: $progress% ($downloaded/$total bytes)"
-                            )
-                        }
-
-                        DownloadManager.STATUS_PAUSED -> {
-                            Log.w(TAG, "Download PAUSED. Reason: $reason")
-                        }
-
-                        else -> {
-                            Log.w(TAG, "Unknown download status: $status")
-                        }
-                    }
-                } else {
-                    Log.e(TAG, "Download query failed for ID: $downloadId")
-                    isDownloading = false
-                }
-                cursor.close()
-                delay(1000)
+        downloadJob = viewModelScope.launch(Dispatchers.IO) {
+            val success = UpdateDownloader.downloadToFile(url, apkFile) { downloaded, total ->
+                val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
+                _downloadProgress.value = percent.coerceIn(0, 100)
+                Log.d(TAG, "Downloading... $percent% ($downloaded/$total bytes)")
+            }
+            if (success) {
+                prefs.edit { putString(KEY_UPDATE_DOWNLOAD_URL, url) }
+                _downloadProgress.value = 100
+                Log.i(TAG, "Download SUCCESSFUL. APK size: ${apkFile.length()} bytes. Initiating install.")
+                _updateStatus.update { UpdateStatus.DOWNLOAD_COMPLETE }
+                initiateInstall()
+            } else {
+                Log.e(TAG, "Download FAILED.")
+                _updateStatus.value = UpdateStatus.ERROR
             }
         }
     }
 
-    private fun initiateInstall(downloadManager: DownloadManager, downloadId: Long) {
+    private fun initiateInstall() {
         Log.i(TAG, "Attempting to initiate APK installation.")
         val apkFile = File(getApplication<Application>().getExternalFilesDir(null), "update.apk")
         if (!apkFile.exists()) {

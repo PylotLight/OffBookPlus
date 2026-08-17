@@ -67,6 +67,10 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         val player = mediaController ?: return
         val isFinished = player.playbackState == Player.STATE_ENDED
         val currentMediaItem = player.currentMediaItem
+        val currentMediaType = try {
+            currentMediaItem?.mediaMetadata?.extras?.getString("MEDIA_TYPE")
+                ?.let { MediaType.valueOf(it) }
+        } catch (e: Exception) { null }
 
         _playbackState.value = _playbackState.value.copy(
             isPlaying = player.isPlaying && !isFinished,
@@ -75,6 +79,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             playbackState = player.playbackState,
             currentChapterTitle = currentMediaItem?.mediaMetadata?.title?.toString() ?: "No Title",
             bookId = currentMediaItem?.mediaMetadata?.albumTitle?.toString() ?: "",
+            mediaId = currentMediaItem?.mediaId ?: "",
+            mediaType = currentMediaType ?: MediaType.AUDIOBOOKS,
             isPreviousChapterAvailable = player.hasPreviousMediaItem(),
             isNextChapterAvailable = player.hasNextMediaItem(),
             isShuffleEnabled = player.shuffleModeEnabled,

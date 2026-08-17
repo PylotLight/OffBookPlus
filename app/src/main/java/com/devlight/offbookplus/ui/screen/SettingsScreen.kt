@@ -2,11 +2,13 @@ package com.devlight.offbookplus.ui.screen
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -24,6 +26,7 @@ fun SettingsScreen(
     viewModel: LibraryViewModel
 ) {
     val updateStatus = viewModel.updateStatus.collectAsState().value
+    val downloadProgress = viewModel.downloadProgress.collectAsState().value
     val context = LocalContext.current
     val currentVersion =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
@@ -72,9 +75,20 @@ fun SettingsScreen(
                     }
                 },
                 label = { Text(statusText) },
-                secondaryLabel = if (updateStatus == UpdateStatus.CHECKING || updateStatus == UpdateStatus.DOWNLOADING) {
-                    { CircularProgressIndicator(Modifier.padding(end = 8.dp)) }
-                } else null,
+                secondaryLabel = when {
+                    updateStatus == UpdateStatus.DOWNLOADING -> {
+                        {
+                            Row {
+                                CircularProgressIndicator(Modifier.padding(end = 6.dp))
+                                Text("$downloadProgress%")
+                            }
+                        }
+                    }
+                    updateStatus == UpdateStatus.CHECKING -> {
+                        { CircularProgressIndicator(Modifier.padding(end = 8.dp)) }
+                    }
+                    else -> null
+                },
                 icon = {
                     Icon(
                         imageVector = Icons.Default.Update,

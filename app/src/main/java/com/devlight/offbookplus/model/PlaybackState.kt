@@ -15,6 +15,8 @@ import androidx.media3.common.Player
  */
 data class PlaybackState(
     val bookId: String = "",
+    val mediaId: String = "",
+    val mediaType: MediaType = MediaType.AUDIOBOOKS,
     val isPlaying: Boolean = false,
     val currentChapterTitle: String = "Loading...",
     val currentChapterIndex: Int = 0,

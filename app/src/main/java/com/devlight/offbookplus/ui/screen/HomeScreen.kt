@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,15 +24,20 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.MaterialTheme
 import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.NavRoutes
+import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 
 @Composable
 fun HomeScreen(
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    playbackViewModel: PlaybackViewModel,
+    onOpenNowPlaying: () -> Unit
 ) {
     val items = listOf(
         SelectorItem(MediaType.AUDIOBOOKS.title, NavRoutes.LIBRARY_ROUTE_TEMPLATE, Icons.AutoMirrored.Filled.LibraryBooks, MediaType.AUDIOBOOKS),
         SelectorItem(MediaType.PODCASTS.title, NavRoutes.LIBRARY_ROUTE_TEMPLATE, Icons.Default.Podcasts, MediaType.PODCASTS),
         SelectorItem(MediaType.MUSIC.title, NavRoutes.LIBRARY_ROUTE_TEMPLATE, Icons.Default.MusicNote, MediaType.MUSIC),
+        SelectorItem("Updates", NavRoutes.UPDATES_ROUTE, Icons.Default.Update),
+        SelectorItem("Play History", NavRoutes.HISTORY_ROUTE, Icons.Default.History),
         SelectorItem("Settings", NavRoutes.SETTINGS_ROUTE, Icons.Default.Settings)
     )
 
@@ -40,6 +47,12 @@ fun HomeScreen(
             .padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        item {
+            NowPlayingBar(
+                playbackViewModel = playbackViewModel,
+                onOpenNowPlaying = onOpenNowPlaying
+            )
+        }
         item {
             Text(
                 "Select Collection",
