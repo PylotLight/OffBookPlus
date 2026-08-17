@@ -12,7 +12,7 @@ import androidx.room.TypeConverters
  */
 @Database(
     entities = [PlaybackProgressEntity::class, MediaItemEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(MediaTypeConverter::class)
@@ -32,10 +32,17 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "offbookplus_db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN shuffleModeEnabled INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

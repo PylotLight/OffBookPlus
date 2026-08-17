@@ -28,7 +28,6 @@ import com.google.android.horologist.compose.layout.ResponsiveTimeText
  */
 class MainActivity : ComponentActivity() {
 
-    // Permission handling logic
     private val mediaPermission =
         Manifest.permission.READ_MEDIA_AUDIO
 
@@ -36,16 +35,13 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (!isGranted) {
-            // Handle permanent denial (e.g., show a persistent message)
         }
-        // Force a re-evaluation of the content state
         setContent(null) { MainContent() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initial check and request if needed
         if (!isPermissionGranted()) {
             requestPermissionLauncher.launch(mediaPermission)
         }
@@ -56,11 +52,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainContent() {
         if (isPermissionGranted()) {
-            AppScaffold(timeText = { ResponsiveTimeText() }) { // <-- Horologist Scaffold
+            AppScaffold(timeText = { ResponsiveTimeText() }) {
                 WearApp()
             }
         } else {
-            // Permission UI to request again
             PermissionHost(onRetry = {
                 requestPermissionLauncher.launch(mediaPermission)
             })
@@ -72,11 +67,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Simple Composable for when permission is denied
 @Composable
 private fun PermissionHost(onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("Media Permission Required.\nTap to Retry.", modifier = Modifier.align(Alignment.Center))
-        // In a real app, this Box would have a Button or be clickable
     }
 }
