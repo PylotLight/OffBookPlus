@@ -6,9 +6,9 @@ import android.util.Log
 import androidx.concurrent.futures.await
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.MetadataRetriever
 import androidx.media3.extractor.metadata.id3.ChapterFrame
 import androidx.media3.extractor.metadata.id3.TextInformationFrame
+import androidx.media3.inspector.MetadataRetriever
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -29,52 +29,53 @@ object ChapterExtractor {
             Log.d(TAG, "--- Starting Metadata Extraction for: ${uri.lastPathSegment} ---")
             try {
                 val mediaItem = MediaItem.fromUri(uri)
-                val retriever = MetadataRetriever.Builder(context, mediaItem).build()
-                val trackGroups = retriever.retrieveTrackGroups().await()
+                MetadataRetriever.Builder(context, mediaItem).build().use { retriever ->
+                    val trackGroups = retriever.retrieveTrackGroups().await()
 
-                val chapters = mutableListOf<ChapterFrame>()
-                var title: String? = null
-                var artist: String? = null
+                    val chapters = mutableListOf<ChapterFrame>()
+                    var title: String? = null
+                    var artist: String? = null
 
-                Log.d(TAG, "Found ${trackGroups.length} track groups.")
+                    Log.d(TAG, "Found ${trackGroups.length} track groups.")
 
-                for (i in 0 until trackGroups.length) {
-                    val format = trackGroups[i].getFormat(0)
-                    Log.d(TAG, "  > Track Group $i Info: mimeType=${format.sampleMimeType}, id=${format.id}, language=${format.language}")
-                    format.metadata?.let { metadata ->
-                        Log.d(TAG, "    > Track $i has ${metadata.length()} metadata entries.")
-                        for (j in 0 until metadata.length()) {
-                            val entry = metadata.get(j)
-                            Log.v(TAG, "      - Entry $j: Type = ${entry.javaClass.simpleName}, Value = $entry")
-                            if (entry is ChapterFrame) {
-                                chapters.add(entry)
-                                Log.i(TAG, "        >> Found Chapter: ID=${entry.chapterId}")
-                            }
-                            if (entry is TextInformationFrame) {
-                                when (entry.id) {
-                                    "TIT2" -> {
-                                        title = entry.value
-                                        Log.i(TAG, "        >> Found Title (TIT2): $title")
-                                    }
-                                    "TPE1" -> {
-                                        artist = entry.value
-                                        Log.i(TAG, "        >> Found Artist (TPE1): $artist")
+                    for (i in 0 until trackGroups.length) {
+                        val format = trackGroups[i].getFormat(0)
+                        Log.d(TAG, "  > Track Group $i Info: mimeType=${format.sampleMimeType}, id=${format.id}, language=${format.language}")
+                        format.metadata?.let { metadata ->
+                            Log.d(TAG, "    > Track $i has ${metadata.length()} metadata entries.")
+                            for (j in 0 until metadata.length()) {
+                                val entry = metadata.get(j)
+                                Log.v(TAG, "      - Entry $j: Type = ${entry.javaClass.simpleName}, Value = $entry")
+                                if (entry is ChapterFrame) {
+                                    chapters.add(entry)
+                                    Log.i(TAG, "        >> Found Chapter: ID=${entry.chapterId}")
+                                }
+                                if (entry is TextInformationFrame) {
+                                    when (entry.id) {
+                                        "TIT2" -> {
+                                            title = entry.value
+                                            Log.i(TAG, "        >> Found Title (TIT2): $title")
+                                        }
+                                        "TPE1" -> {
+                                            artist = entry.value
+                                            Log.i(TAG, "        >> Found Artist (TPE1): $artist")
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                if (title != null) {
-                    ExtractedAudiobookData(
-                        title = title,
-                        artist = artist,
-                        chapters = chapters.sortedBy { it.chapterId }
-                    )
-                } else {
-                    Log.w(TAG, "Extraction failed: Could not find a title (TIT2) for '${uri.lastPathSegment}'")
-                    null
+                    if (title != null) {
+                        ExtractedAudiobookData(
+                            title = title,
+                            artist = artist,
+                            chapters = chapters.sortedBy { it.chapterId }
+                        )
+                    } else {
+                        Log.w(TAG, "Extraction failed: Could not find a title (TIT2) for '${uri.lastPathSegment}'")
+                        null
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "!!! FATAL EXTRACTION ERROR for URI: $uri", e)

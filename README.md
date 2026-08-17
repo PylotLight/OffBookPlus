@@ -68,6 +68,47 @@ Once the application is installed, you can use the built-in update checker:
 2.  Tap **"Check for App Update"**.
 3.  If an update is available, the button text will change to indicate a new version. Tapping it again will download the APK and automatically prompt you to install it.
 
+## Building
+
+The repo lives on a NAS (`/Data`) that is also a k3s node, so local builds are run as one-shot Kubernetes Jobs on that node. This avoids needing a local JDK/SDK: the toolchain (JDK 21 + Android SDK) lives in a container image.
+
+### Prerequisites
+
+- A `kubectl` that can talk to the local cluster. If it isn't on `PATH`, set the `KUBECTL` env var (e.g. `KUBECTL=/Data/files/repos/kubectl`).
+- The build image must exist in the cluster's containerd (first time only, see below).
+
+### Build the toolchain image (first time only)
+
+```bash
+KUBECTL=/Data/files/repos/kubectl ./build-env/build-image.sh
+```
+
+This builds `docker.io/library/android-build:jdk21` with the host docker daemon and imports it into k3s containerd.
+
+### Run a build
+
+```bash
+# default task: assembleDebug
+KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh
+
+# build a release APK
+KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh assembleRelease
+
+# pass extra gradle args
+KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh assembleDebug --extra --stacktrace
+```
+
+What happens:
+
+- A one-shot `Job` is created in the `headnet` namespace, pinned to the `luxai` node, mounting the NAS `/Data` (source + Gradle/Android caches) into the container.
+- It runs `./gradlew <task>` with `GRADLE_USER_HOME` pointed at `/Data/android-build/cache/gradle`, so dependency caches survive between builds.
+- The full Gradle log is streamed to your terminal and saved to `/Data/android-build/cache/last-build.log`.
+- Built APKs are listed from `app/build/outputs`; the Job is deleted automatically on success (use `--keep-job` to retain it).
+
+Common options: `--project PATH`, `--image TAG`, `--job NAME`, `--namespace NS`, `--cache PATH`, `--extra ARGS`, `--keep-job`. Run `./build-env/build.sh --help` for details.
+
+> Note: `build-env/` is local tooling (kept out of git); the CI workflow in `.github/workflows/ci.yml` builds the same project on GitHub Actions runners.
+
 ## Roadmap & Future Features
 
 This project is in active development. The following features are planned for future releases:

@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -5,7 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -15,7 +16,7 @@ android {
     applicationVariants.all {
         val variant = this
         variant.outputs
-            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .map { it as BaseVariantOutputImpl }
             .forEach { output ->
                 if (variant.buildType.name == "release") {
                     output.outputFileName = "OffBook+-v${variant.versionName}.apk"
@@ -75,7 +76,6 @@ configurations.all {
 }
 
 dependencies {
-
     implementation(libs.play.services.wearable)
     implementation(platform(libs.compose.bom))
     implementation(libs.ui)
@@ -86,7 +86,6 @@ dependencies {
     implementation(libs.wear.tooling.preview)
     implementation(libs.activity.compose)
     implementation(libs.core.splashscreen)
-    implementation(libs.androidx.material3)
     implementation(libs.androidx.sqlite.framework)
     implementation(libs.androidx.sqlite.bundled)
     androidTestImplementation(platform(libs.compose.bom))
@@ -95,22 +94,16 @@ dependencies {
     debugImplementation(libs.ui.test.manifest)
     implementation(libs.kotlinx.serialization.json)
 
-
-    //
     implementation(libs.horologist.compose.layout)
     implementation(libs.google.horologist.media.ui)
     implementation(libs.google.horologist.media3.backend)
     implementation(libs.google.horologist.audio)
     implementation(libs.google.horologist.compose.material)
-
     implementation(libs.androidx.concurrent.futures.ktx)
-
-    // --- Horologist (Wear OS Utilities)
-    implementation(libs.androidx.appcompat)
     implementation(libs.core.ktx)
 
-//    // --- Media3 (Core Media Framework)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.inspector)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.extractor)
     implementation(libs.media3.ui)
@@ -118,10 +111,8 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-
-    // The m4b extractor can remain as 'implementation' now
     implementation(libs.media3.extractor.m4b)
-//
+
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.material3)

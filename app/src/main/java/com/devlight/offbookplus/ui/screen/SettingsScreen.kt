@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.runtime.Composable
@@ -18,12 +19,14 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
+import com.devlight.offbookplus.ui.NavRoutes
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
 import com.devlight.offbookplus.ui.viewmodel.UpdateStatus
 
 @Composable
 fun SettingsScreen(
-    viewModel: LibraryViewModel
+    viewModel: LibraryViewModel,
+    onNavigate: (String) -> Unit
 ) {
     val updateStatus = viewModel.updateStatus.collectAsState().value
     val downloadProgress = viewModel.downloadProgress.collectAsState().value
@@ -96,6 +99,22 @@ fun SettingsScreen(
                     )
                 },
                 enabled = updateStatus != UpdateStatus.CHECKING
+            )
+        }
+        item {
+            Chip(
+                onClick = { onNavigate(NavRoutes.HISTORY_ROUTE) },
+                label = { Text("Play History") },
+                secondaryLabel = { Text("Recently played media.") },
+                icon = { Icon(imageVector = Icons.Default.History, contentDescription = "Play History") }
+            )
+        }
+        item {
+            Chip(
+                onClick = { onNavigate(NavRoutes.UPDATES_ROUTE) },
+                label = { Text("Updates") },
+                secondaryLabel = { Text("Release notes and downloads.") },
+                icon = { Icon(imageVector = Icons.Default.Update, contentDescription = "Updates") }
             )
         }
     }
