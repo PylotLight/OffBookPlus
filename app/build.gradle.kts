@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.devlight.offbookplus"
-        minSdk = 33
+        minSdk = 35
         targetSdk = 37
         versionCode = 1
         versionName = "0.0.0"
