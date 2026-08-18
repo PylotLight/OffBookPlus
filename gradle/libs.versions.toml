@@ -1,22 +1,22 @@
 [versions]
-agp = "8.13.2"
+agp = "9.3.1"
 ksp = "2.3.11"
 kotlin = "2.4.10"
 concurrentFuturesKtx = "1.3.0"
-coreKtx = "1.18.0"
+coreKtx = "1.19.0"
 horologist = "0.7.15"
 kotlinxSerializationJson = "1.11.0"
 media3 = "1.11.0"
 media3ExtractorM4b = "1.0.5"
 playServicesWearable = "20.0.1"
-composeBom = "2026.06.00"
+composeBom = "2026.08.00"
 wearCompose = "1.5.6"
 wearToolingPreview = "1.0.0"
 activityCompose = "1.13.0"
 coreSplashscreen = "1.2.0"
 room = "2.8.4"
 materialIconsCore = "1.7.8"
-sqlite = "2.6.1"
+sqlite = "2.7.0"
 
 [libraries]
 androidx-concurrent-futures-ktx = { module = "androidx.concurrent:concurrent-futures-ktx", version.ref = "concurrentFuturesKtx" }
@@ -60,7 +60,6 @@ androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", 
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
