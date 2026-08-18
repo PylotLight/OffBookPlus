@@ -2,8 +2,17 @@
 
 package com.devlight.offbookplus.playback
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -77,6 +86,41 @@ class MediaPlaybackService : MediaSessionService() {
             saveCurrentProgress()
         }
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { saveCurrentProgress() }
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
+        }
+    }
+
+    private lateinit var audioManager: AudioManager
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            val removedOutput = removedDevices.any {
+                !it.isSource && (it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET)
+            }
+            if (removedOutput && exoPlayer.isPlaying) {
+                exoPlayer.pause()
+                Log.i(TAG, "Paused: active audio output device removed")
+            }
+        }
+
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            if (addedDevices.any { !it.isSource && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }) {
+                Log.i(TAG, "Bluetooth A2DP device connected")
+            }
+        }
+    }
+
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && exoPlayer.isPlaying) {
+                exoPlayer.pause()
+                Log.i(TAG, "Paused: audio becoming noisy (device disconnected)")
+            }
+        }
     }
 
 
@@ -92,6 +136,39 @@ class MediaPlaybackService : MediaSessionService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
                 .build()
+        }
+
+        override fun onMediaButtonEvent(session: MediaSession, controller: MediaSession.ControllerInfo, mediaButtonIntent: Intent): Boolean {
+            val keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java) ?: return false
+            if (keyEvent.action != KeyEvent.ACTION_DOWN) return true
+
+            when (keyEvent.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    exoPlayer.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    exoPlayer.pause()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    exoPlayer.seekToNextMediaItem()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    if (exoPlayer.currentPosition > 3_000) {
+                        exoPlayer.seekTo(0)
+                    } else {
+                        exoPlayer.seekToPreviousMediaItem()
+                    }
+                    return true
+                }
+            }
+            return false
         }
 
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
@@ -310,6 +387,7 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         historyRecorder = PlayHistoryRecorder(AppDatabase.getInstance(applicationContext))
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
         exoPlayer = ExoPlayer.Builder(this).setAudioAttributes(audioAttributes, true).build()
 
@@ -326,6 +404,14 @@ class MediaPlaybackService : MediaSessionService() {
         exoPlayer.addListener(playerListener)
         mediaSession = MediaSession.Builder(this, exoPlayer).setCallback(MediaSessionCallback()).build()
 
+        val noisyFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(becomingNoisyReceiver, noisyFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(becomingNoisyReceiver, noisyFilter)
+        }
+
         periodicFlushJob = serviceScope.launch {
             while (isActive) {
                 delay(HISTORY_TICK_MS)
@@ -341,6 +427,8 @@ class MediaPlaybackService : MediaSessionService() {
         periodicFlushJob?.cancel()
         saveCurrentProgress()
         serviceScope.cancel()
+        runCatching { unregisterReceiver(becomingNoisyReceiver) }
+        audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         mediaSession.release()
         exoPlayer.removeListener(playerListener)
         exoPlayer.release()
