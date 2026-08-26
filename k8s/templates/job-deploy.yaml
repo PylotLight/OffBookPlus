@@ -79,7 +79,7 @@ spec:
                   port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
                   if [ -z "$port" ]; then
                     echo "== sweeping $WATCH_IP (this takes up to ~2 min)"
-                    scan="$(nmap --open -T4 -p 32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                    scan="$(nmap --open -T4 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
                     port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
                   fi
                   [ -n "$port" ] || { echo "!! no open port found"; exit 1; }
