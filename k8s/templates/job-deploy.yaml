@@ -71,6 +71,28 @@ spec:
               fi
 
               case "$ACTION" in
+                discover)
+                  # Find the current wireless-debugging port after a watch
+                  # reboot. mDNS first, then a sweep of the ephemeral range.
+                  echo "== mdns services:"
+                  adb mdns services 2>&1 || true
+                  port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
+                  if [ -z "$port" ]; then
+                    echo "== sweeping $WATCH_IP (this takes up to ~2 min)"
+                    scan="$(nmap --open -T4 -p 32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                    port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                  fi
+                  [ -n "$port" ] || { echo "!! no open port found"; exit 1; }
+                  echo "== candidate port $port"
+                  adb connect "$WATCH_IP:$port" || true
+                  sleep 2
+                  state="$(adb -s "$WATCH_IP:$port" get-state 2>/dev/null || true)"
+                  if [ "$state" != "device" ]; then
+                    echo "!! port $port did not yield an authorized device"
+                    exit 1
+                  fi
+                  echo "DISCOVERED_PORT=$port"
+                  ;;
                 adbcmd)
                   # client-side adb command (e.g. pinning tcpip mode); runs
                   # against $target without requiring device state

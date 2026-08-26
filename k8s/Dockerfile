@@ -59,9 +59,11 @@ RUN dpkg --add-architecture amd64 \
 
 # Native arm64 adb: Google's platform-tools adb is x86_64 and core-dumps
 # under qemu-user during connect/TLS. Ubuntu's build is stable; shadow the
-# platform-tools copy so every 'adb' call uses it.
+# platform-tools copy so every 'adb' call uses it. nmap enables port
+# auto-discovery when the watch reboots and its wireless-debugging port
+# rotates.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends adb \
+    && apt-get install -y --no-install-recommends adb nmap \
     && ln -sf /usr/bin/adb /opt/android-sdk/platform-tools/adb \
     && rm -rf /var/lib/apt/lists/*
 
