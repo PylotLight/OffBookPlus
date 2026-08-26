@@ -105,7 +105,8 @@ render_template "$K8S_DIR/templates/job-deploy.yaml" "$RENDERED" \
     "MAIN_ACTIVITY=$MAIN_ACTIVITY" \
     "SHELL_CMD_B64=$(printf '%s' "${SHELL_CMD:-}" | base64)" \
     "WORKSPACE_HOSTPATH=$WORKSPACE_HOST" \
-    "ARTIFACTS_HOSTPATH=$ARTIFACTS_HOST"
+    "ARTIFACTS_HOSTPATH=$ARTIFACTS_HOST" \
+    "CACHE_HOSTPATH=$CACHE_HOST"
 
 info "creating deploy job $JOB_NAME ($ACTION -> $IP:$PORT, wait up to ${WAIT_SECONDS}s)"
 kc apply -f "$RENDERED"

@@ -148,7 +148,7 @@ spec:
             - name: SHELL_CMD_B64
               value: "__SHELL_CMD_B64__"
             - name: HOME
-              value: /tmp/home
+              value: /cache/adb-home
           resources:
             requests:
               cpu: 100m
@@ -161,6 +161,8 @@ spec:
               mountPath: /workspace
             - name: artifacts
               mountPath: /artifacts
+            - name: cache
+              mountPath: /cache
       volumes:
         - name: workspace
           hostPath:
@@ -169,4 +171,8 @@ spec:
         - name: artifacts
           hostPath:
             path: __ARTIFACTS_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: cache
+          hostPath:
+            path: __CACHE_HOSTPATH__
             type: DirectoryOrCreate

@@ -57,6 +57,14 @@ RUN dpkg --add-architecture amd64 \
     && apt-get install -y --no-install-recommends libc6:amd64 libstdc++6:amd64 zlib1g:amd64 \
     && rm -rf /var/lib/apt/lists/*
 
+# Native arm64 adb: Google's platform-tools adb is x86_64 and core-dumps
+# under qemu-user during connect/TLS. Ubuntu's build is stable; shadow the
+# platform-tools copy so every 'adb' call uses it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends adb \
+    && ln -sf /usr/bin/adb /opt/android-sdk/platform-tools/adb \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace
 
 CMD ["bash"]
