@@ -1,0 +1,108 @@
+# Long-lived adb session against the watch. Started by scripts/test.sh start;
+# all interactive commands exec into this pod, so each action takes ~1-2s
+# instead of spinning up a Job per tap. Auto-cleans after 4h.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: offbook-adb-session
+  namespace: __NAMESPACE__
+  labels:
+    app: offbook-adb-session
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: offbook-adb-session
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: adb
+          image: __IMAGE__
+          workingDir: /workspace
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              mkdir -p "$HOME"
+              adb start-server >/dev/null 2>&1 || true
+
+              # Reusable discovery+connect helper for `test.sh reconnect`
+              cat > /cache/session-connect.sh <<'EOF'
+              #!/bin/bash
+              set +e
+              IP="$1"; PORT="$2"
+              target=""
+              if [ -n "$PORT" ]; then
+                target="$IP:$PORT"
+              else
+                for attempt in 1 2 3; do
+                  port="$(adb mdns services 2>/dev/null | grep -oE "$IP:[0-9]+" | head -1 | cut -d: -f2)"
+                  if [ -z "$port" ]; then
+                    scan="$(nmap -Pn --open -T4 -p 5555,32000-61000 "$IP" -oG - 2>/dev/null || true)"
+                    port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                  fi
+                  [ -n "$port" ] && break
+                  echo "attempt $attempt: no port found (radio may be dozing)"; sleep 5
+                done
+                [ -n "$port" ] || { echo "!! no open port on $IP"; exit 1; }
+                target="$IP:$port"
+              fi
+              adb connect "$target"
+              for _ in $(seq 1 15); do
+                [ "$(adb -s "$target" get-state 2>/dev/null)" = "device" ] && break
+                sleep 2
+              done
+              if [ "$(adb -s "$target" get-state 2>/dev/null)" != "device" ]; then
+                echo "!! could not reach device state on $target"; exit 1
+              fi
+              echo "SESSION_TARGET=$target"
+              EOF
+              chmod +x /cache/session-connect.sh
+
+              out="$(/cache/session-connect.sh "$WATCH_IP" "$WATCH_PORT")" || { echo "$out"; exit 1; }
+              echo "$out"
+              target="$(grep -oE 'SESSION_TARGET=.*' <<<"$out" | cut -d= -f2)"
+              echo "$out" > /cache/adb-session-target
+              echo "== session ready: $target (stays warm; auto-cleans in 4h)"
+
+              # keepalive: heal transient Wi-Fi drops
+              while :; do
+                sleep 20
+                adb -s "$target" get-state >/dev/null 2>&1 || adb connect "$target" >/dev/null 2>&1
+              done
+          env:
+            - name: WATCH_IP
+              value: "__WATCH_IP__"
+            - name: WATCH_PORT
+              value: "__WATCH_PORT__"
+            - name: HOME
+              value: /cache/adb-home
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: artifacts
+              mountPath: /artifacts
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: workspace
+          hostPath:
+            path: __WORKSPACE_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: artifacts
+          hostPath:
+            path: __ARTIFACTS_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: cache
+          hostPath:
+            path: __CACHE_HOSTPATH__
+            type: DirectoryOrCreate

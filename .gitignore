@@ -30,6 +30,7 @@ build-env/
 k8s/.workspace/
 k8s/.cache/
 k8s/.artifacts/
+k8s/.watch.local
 k8s/*.tar
 
 # BlueJ files
