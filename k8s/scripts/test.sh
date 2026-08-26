@@ -5,6 +5,7 @@
 #
 # One-time:   ./k8s/scripts/test.sh setup          (saves watch IP, gitignored)
 # Then:
+#   ./k8s/scripts/test.sh fix                    # after a watch reboot: scan + re-pin port
 #   ./k8s/scripts/test.sh install                # newest debug apk + launch
 #   ./k8s/scripts/test.sh launch                 # wake + launch debug app
 #   ./k8s/scripts/test.sh shot                   # screenshot -> k8s/.artifacts/
@@ -16,8 +17,8 @@
 #   ./k8s/scripts/test.sh forget                 # clear saved watch config
 #
 # The watch sleeps hard (~10s); press the crown, then run a command. The
-# wireless-debugging port is remembered after the first connect; after a
-# watch reboot the port rotates and commands auto-fallback to discovery.
+# wireless-debugging port is remembered between commands; after a watch
+# reboot the port rotates — run `fix` to rescan and pin it again.
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,11 +34,21 @@ shift || true
 
 APP_ID_DEBUG="$APP_ID.debug"
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,/^set -eo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0; }
 [ "$CMD" = help ] && usage
 
 need_watch_ip() {
     [ -n "${WATCH_IP:-}" ] || die "watch IP unknown; run: $0 setup"
+}
+
+save_watch_port() {
+    local p="$1"
+    if grep -q "^WATCH_PORT=" "$WATCH_LOCAL" 2>/dev/null; then
+        sed -i '' "s/^WATCH_PORT=.*/WATCH_PORT=$p/" "$WATCH_LOCAL"
+    else
+        printf "WATCH_PORT=%s\n" "$p" >>"$WATCH_LOCAL"
+    fi
+    info "remembered port $p"
 }
 
 # Run deploy.sh with the preset defaults. Falls back to port auto-discovery
@@ -61,14 +72,8 @@ save_port_from_log() {
     local p
     p="$(grep -oE 'watch found at [0-9.]+:[0-9]+' "$CACHE_HOST/last-deploy.log" 2>/dev/null |
         tail -1 | grep -oE '[0-9]+$' || true)"
-    if [ -n "$p" ] && [ "$p" != "${WATCH_PORT:-}" ]; then
-        if grep -q "^WATCH_PORT=" "$WATCH_LOCAL" 2>/dev/null; then
-            sed -i '' "s/^WATCH_PORT=.*/WATCH_PORT=$p/" "$WATCH_LOCAL"
-        else
-            printf "WATCH_PORT=%s\n" "$p" >>"$WATCH_LOCAL"
-        fi
-        info "remembered port $p for next time"
-    fi
+    [ -n "$p" ] && [ "$p" != "${WATCH_PORT:-}" ] && save_watch_port "$p"
+    return 0
 }
 
 case "$CMD" in
@@ -83,6 +88,32 @@ case "$CMD" in
     forget)
         rm -f "$WATCH_LOCAL"
         info "cleared saved watch config"
+        ;;
+
+    fix)
+        need_watch_ip
+        info "scanning for the watch's current port (mDNS, then sweep)"
+        "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" --action discover ||
+            die "discovery failed (Debug over Wi-Fi on? crown pressed?)"
+        local_port="$(grep -oE 'DISCOVERED_PORT=[0-9]+' "$CACHE_HOST/last-deploy.log" | tail -1 | cut -d= -f2)"
+        [ -n "$local_port" ] || die "no port found in discovery log"
+        info "watch is at $WATCH_IP:$local_port; pinning tcpip 5555"
+        if "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" --port "$local_port" --action adbcmd \
+            --adb-cmd 'set +e
+adb -s "$target" tcpip 5555
+sleep 4
+adb connect "$WATCH_IP:5555"
+sleep 2
+st="$(adb -s "$WATCH_IP:5555" get-state 2>/dev/null)"
+echo "PINNED_STATE=$st"
+[ "$st" = device ]' &&
+            grep -q "PINNED_STATE=device" "$CACHE_HOST/last-deploy.log"; then
+            save_watch_port 5555
+            info "port fixed at 5555 until the next watch reboot"
+        else
+            warn "could not pin 5555; remembering discovered port $local_port instead"
+            save_watch_port "$local_port"
+        fi
         ;;
 
     install)
