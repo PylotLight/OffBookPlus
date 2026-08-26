@@ -99,6 +99,11 @@ spec:
                     adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
                   }
                   ;;
+                shell)
+                  await_device || exit 1
+                  echo "== shell on $target"
+                  adb -s "$target" shell "$(echo "$SHELL_CMD_B64" | base64 -d)"
+                  ;;
                 shot)
                   await_device && {
                     echo "== capturing screenshot from $target"
@@ -140,6 +145,8 @@ spec:
               value: "__APP_ID__"
             - name: MAIN_ACTIVITY
               value: "__MAIN_ACTIVITY__"
+            - name: SHELL_CMD_B64
+              value: "__SHELL_CMD_B64__"
             - name: HOME
               value: /tmp/home
           resources:

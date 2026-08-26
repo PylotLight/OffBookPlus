@@ -2,9 +2,10 @@
 # Deploy/test the built APK on a WearOS watch over Wi-Fi using a one-shot
 # adb Job in the cluster (no Android tooling runs on this Mac).
 #
-# Usage: ./deploy.sh [--action install|launch|shot|logcat|uninstall|wait|pair]
+# Usage: ./deploy.sh [--action install|launch|shot|logcat|uninstall|wait|pair|shell]
 #                    [--ip IP] [--port N] [--apk PATH] [--launch]
-#                    [--pair CODE PORT] [--wait SECONDS] [--keep-job] [-h]
+#                    [--pair CODE PORT] [--wait SECONDS] [--shell-cmd CMD]
+#                    [--keep-job] [-h]
 #
 # Jobs retry adb connect for --wait seconds (default from config.env) so you
 # can start a deploy before picking up the watch; macOS gets a notification
@@ -25,7 +26,7 @@ LAUNCH=0
 KEEP_JOB=0
 WAIT_SECONDS="$WATCH_WAIT_SECONDS"
 
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -40,6 +41,7 @@ while [ $# -gt 0 ]; do
         --launch) LAUNCH=1; shift ;;
         --keep-job) KEEP_JOB=1; shift ;;
         --wait) WAIT_SECONDS="$2"; shift 2 ;;
+        --shell-cmd) SHELL_CMD="$2"; shift 2 ;;
         -h | --help) usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -49,9 +51,12 @@ done
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]] || die "--wait expects seconds, got '$WAIT_SECONDS'"
 
 case "$ACTION" in
-    install | launch | shot | logcat | uninstall | connect | pair | wait) ;;
+    install | launch | shot | logcat | uninstall | connect | pair | wait | shell) ;;
     *) die "invalid action '$ACTION'" ;;
 esac
+if [ "$ACTION" = shell ]; then
+    [ -n "${SHELL_CMD:-}" ] || die "--action shell requires --shell-cmd"
+fi
 
 ensure_cluster
 ensure_namespace
@@ -98,6 +103,7 @@ render_template "$K8S_DIR/templates/job-deploy.yaml" "$RENDERED" \
     "LAUNCH_AFTER_INSTALL=$([ "$LAUNCH" -eq 1 ] && echo yes || echo "")" \
     "APP_ID=$APP_ID" \
     "MAIN_ACTIVITY=$MAIN_ACTIVITY" \
+    "SHELL_CMD_B64=$(printf '%s' "${SHELL_CMD:-}" | base64)" \
     "WORKSPACE_HOSTPATH=$WORKSPACE_HOST" \
     "ARTIFACTS_HOSTPATH=$ARTIFACTS_HOST"
 
