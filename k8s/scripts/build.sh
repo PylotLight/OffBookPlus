@@ -10,6 +10,8 @@
 #       --keep-job       Do not delete the Job after success
 #       --no-sync        Reuse the previous .workspace contents as-is
 #       --skip-image-check  Assume the toolchain image already exists
+#       --version-code N Override versionCode in the synced workspace copy
+#       --version-name S Override versionName in the synced workspace copy
 #   -h, --help
 set -eo pipefail
 
@@ -24,6 +26,8 @@ KEEP_JOB=0
 DO_SYNC=1
 CHECK_IMAGE=1
 EXTRA_ARGS=()
+VER_CODE=""
+VER_NAME=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -33,6 +37,11 @@ while [ $# -gt 0 ]; do
         --keep-job) KEEP_JOB=1; shift ;;
         --no-sync) DO_SYNC=0; shift ;;
         --skip-image-check) CHECK_IMAGE=0; shift ;;
+        --version-code)
+            [[ "$2" =~ ^[0-9]+$ ]] || die "--version-code expects a number"
+            VER_CODE="$2"; shift 2
+            ;;
+        --version-name) VER_NAME="$2"; shift 2 ;;
         --) shift; EXTRA_ARGS=("$@"); break ;;
         -h | --help)
             sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
@@ -90,6 +99,18 @@ fi
             "$REPO_ROOT/local.properties" || true
     fi
 } >"$WORKSPACE_HOST/local.properties"
+
+# Version overrides are applied to the workspace copy only (same approach as
+# CI's tag builds), so an on-device install can upgrade over release builds.
+WS_GRADLE="$WORKSPACE_HOST/app/build.gradle.kts"
+if [ -n "$VER_CODE" ]; then
+    sed -i '' "s/versionCode = [0-9]\+/versionCode = $VER_CODE/" "$WS_GRADLE"
+    info "workspace versionCode -> $VER_CODE"
+fi
+if [ -n "$VER_NAME" ]; then
+    sed -i '' "s/versionName = \".*\"/versionName = \"$VER_NAME\"/" "$WS_GRADLE"
+    info "workspace versionName -> $VER_NAME"
+fi
 
 RENDERED="$CACHE_HOST/$JOB_NAME.yaml"
 render_template "$K8S_DIR/templates/job-build.yaml" "$RENDERED" \
