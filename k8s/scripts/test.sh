@@ -16,9 +16,10 @@
 #   ./k8s/scripts/test.sh shell "cmd"            # arbitrary adb shell
 #   ./k8s/scripts/test.sh forget                 # clear saved watch config
 #
-# The watch sleeps hard (~10s); press the crown, then run a command. The
-# wireless-debugging port is remembered between commands; after a watch
-# reboot the port rotates — run `fix` to rescan and pin it again.
+# The .debug build keeps its own screen on and Wi-Fi awake (DevKeepAwake),
+# so once launched it stays reachable — no crown pressing mid-session. After
+# a watch reboot: wake the watch, re-enable Debug over Wi-Fi, run `fix`,
+# then `launch`.
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,7 +71,7 @@ run_deploy() {
 
 save_port_from_log() {
     local p
-    p="$(grep -oE 'watch found at [0-9.]+:[0-9]+' "$CACHE_HOST/last-deploy.log" 2>/dev/null |
+    p="$(grep -oE '(DISCOVERED_PORT=|watch found at [0-9.]+:)[0-9]+' "$CACHE_HOST/last-deploy.log" 2>/dev/null |
         tail -1 | grep -oE '[0-9]+$' || true)"
     [ -n "$p" ] && [ "$p" != "${WATCH_PORT:-}" ] && save_watch_port "$p"
     return 0

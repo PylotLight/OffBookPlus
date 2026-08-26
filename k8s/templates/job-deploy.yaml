@@ -30,13 +30,26 @@ spec:
               mkdir -p "$HOME"
               adb start-server >/dev/null 2>&1 || true
 
-              # Wait until the watch's adb port accepts TCP (bash /dev/tcp).
+              # Wait until the watch's adb port accepts TCP. Return codes:
+              #   0 reachable, 1 timed out (watch likely asleep),
+              #   2 actively refusing (watch awake, port stale).
               await_port() {
-                local ip="$1" port="$2" waited=0 limit="$WAIT_SECONDS"
+                local ip="$1" port="$2" waited=0 limit="$WAIT_SECONDS" fast=0 rc
                 while [ "$waited" -lt "$limit" ]; do
-                  if (echo > "/dev/tcp/$ip/$port") >/dev/null 2>&1; then
+                  rc=0
+                  timeout 3 bash -c "echo > /dev/tcp/$ip/$port" >/dev/null 2>&1 || rc=$?
+                  if [ "$rc" -eq 0 ]; then
                     echo "== $ip:$port reachable after ${waited}s"
                     return 0
+                  fi
+                  if [ "$rc" -ne 124 ]; then
+                    fast=$((fast + 1))
+                    if [ "$fast" -ge 3 ]; then
+                      echo "!! $ip:$port actively refusing (watch awake, port stale)"
+                      return 2
+                    fi
+                  else
+                    fast=0
                   fi
                   printf '== waiting for %s:%s (%ss/%ss)\n' "$ip" "$port" "$waited" "$limit"
                   sleep 5
@@ -46,10 +59,35 @@ spec:
                 return 1
               }
 
-              # adb connect until the device reports state=device.
+              # Find the watch's current port: mDNS first, then a sweep of
+              # the ephemeral range. Updates $target, prints DISCOVERED_PORT.
+              recover_port() {
+                local port scan
+                echo "== recovering port: mDNS first"
+                port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
+                if [ -z "$port" ]; then
+                  echo "== sweeping $WATCH_IP (this takes up to ~2 min)"
+                  scan="$(nmap -Pn --open -T4 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                  port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                fi
+                [ -n "$port" ] || return 1
+                target="$WATCH_IP:$port"
+                adb connect "$target" >/dev/null 2>&1 || true
+                echo "DISCOVERED_PORT=$port"
+              }
+
+              # adb connect until the device reports state=device. If the
+              # given port is stale or dead, recover the real one inline.
               await_device() {
-                local waited=0
-                await_port "$WATCH_IP" "$WATCH_PORT" || return 1
+                local waited=0 rc=0
+                await_port "$WATCH_IP" "$WATCH_PORT" || rc=$?
+                if [ "$rc" -ne 0 ]; then
+                  [ "$rc" -eq 2 ] && echo "== port stale; recovering inline" || echo "== port dead; trying recovery anyway"
+                  if ! recover_port; then
+                    echo "!! no open adb port found on $WATCH_IP" >&2
+                    return 1
+                  fi
+                fi
                 while [ "$waited" -lt "$WAIT_SECONDS" ]; do
                   adb connect "$target" >/dev/null 2>&1 || true
                   if [ "$(adb -s "$target" get-state 2>/dev/null)" = "device" ]; then
@@ -66,32 +104,19 @@ spec:
 
               if [ -n "$PAIR_CODE" ]; then
                 echo "== pairing with $WATCH_IP:$PAIR_PORT"
-                await_port "$WATCH_IP" "$PAIR_PORT"
+                await_port "$WATCH_IP" "$PAIR_PORT" || true
                 adb pair "$WATCH_IP:$PAIR_PORT" "$PAIR_CODE"
               fi
 
               case "$ACTION" in
                 discover)
-                  # Find the current wireless-debugging port after a watch
-                  # reboot. mDNS first, then a sweep of the ephemeral range.
-                  echo "== mdns services:"
-                  adb mdns services 2>&1 || true
-                  port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
-                  if [ -z "$port" ]; then
-                    echo "== sweeping $WATCH_IP (this takes up to ~2 min)"
-                    scan="$(nmap -Pn --open -T4 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
-                    port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
-                  fi
-                  [ -n "$port" ] || { echo "!! no open port found"; exit 1; }
-                  echo "== candidate port $port"
-                  adb connect "$WATCH_IP:$port" || true
+                  recover_port || { echo "!! no open port found"; exit 1; }
                   sleep 2
-                  state="$(adb -s "$WATCH_IP:$port" get-state 2>/dev/null || true)"
+                  state="$(adb -s "$target" get-state 2>/dev/null || true)"
                   if [ "$state" != "device" ]; then
-                    echo "!! port $port did not yield an authorized device"
+                    echo "!! $target did not yield an authorized device"
                     exit 1
                   fi
-                  echo "DISCOVERED_PORT=$port"
                   ;;
                 adbcmd)
                   # client-side adb command (e.g. pinning tcpip mode); runs
