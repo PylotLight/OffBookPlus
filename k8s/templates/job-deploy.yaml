@@ -62,13 +62,24 @@ spec:
               # Find the watch's current port: mDNS first, then a sweep of
               # the ephemeral range. Updates $target, prints DISCOVERED_PORT.
               recover_port() {
-                local port scan
+                local port="" scan pass
                 echo "== recovering port: mDNS first"
                 port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
                 if [ -z "$port" ]; then
-                  echo "== sweeping $WATCH_IP (this takes up to ~2 min)"
-                  scan="$(nmap -Pn --open -T4 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
-                  port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                  echo "== trying unicast mDNS query on $WATCH_IP:5353"
+                  scan="$(nmap -sU -Pn -p 5353 --script dns-service-discovery --script-timeout 8s "$WATCH_IP" -oN - 2>/dev/null || true)"
+                  port="$(grep -iA4 'adb-tls-connect' <<<"$scan" | grep -oE 'port[=: ]+[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+                  [ -n "$port" ] && echo "== unicast mDNS answered"
+                fi
+                if [ -z "$port" ]; then
+                  for pass in 1 2 3; do
+                    echo "== fast TCP sweep pass $pass/3 (~10s)"
+                    scan="$(nmap -Pn --open -T5 --min-rate 4000 --max-retries 1 --host-timeout 25s \
+                      -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                    port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                    [ -n "$port" ] && break
+                    sleep 4
+                  done
                 fi
                 [ -n "$port" ] || return 1
                 target="$WATCH_IP:$port"
@@ -84,7 +95,7 @@ spec:
                 if [ "$rc" -ne 0 ]; then
                   [ "$rc" -eq 2 ] && echo "== port stale; recovering inline" || echo "== port dead; trying recovery anyway"
                   if ! recover_port; then
-                    echo "!! no open adb port found on $WATCH_IP" >&2
+                    echo "!! no open adb port found on $WATCH_IP (wake the watch, check Debug over Wi-Fi, retry)" >&2
                     return 1
                   fi
                 fi
@@ -110,7 +121,7 @@ spec:
 
               case "$ACTION" in
                 discover)
-                  recover_port || { echo "!! no open port found"; exit 1; }
+                  recover_port || { echo "!! no open port found (wake the watch, check Debug over Wi-Fi, retry)"; exit 1; }
                   sleep 2
                   state="$(adb -s "$target" get-state 2>/dev/null || true)"
                   if [ "$state" != "device" ]; then
