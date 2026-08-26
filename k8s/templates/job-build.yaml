@@ -1,0 +1,58 @@
+# One-shot Gradle build Job. Rendered by scripts/build.sh, which fills the
+# double-underscore values. Reference copy; prefer running the script.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app: offbook-build
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: __DEADLINE__
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: offbook-build
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: gradle
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              ./gradlew $GRADLE_ARGS
+          env:
+            - name: GRADLE_ARGS
+              value: "__GRADLE_ARGS__"
+            - name: GRADLE_OPTS
+              value: "__GRADLE_OPTS_VALUE__"
+            - name: GRADLE_USER_HOME
+              value: /cache/gradle
+            - name: HOME
+              value: /tmp/home
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "__CPU_LIMIT__"
+              memory: __MEM_LIMIT__
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: workspace
+          hostPath:
+            path: __WORKSPACE_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: cache
+          hostPath:
+            path: __CACHE_HOSTPATH__
+            type: DirectoryOrCreate

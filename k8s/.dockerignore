@@ -1,0 +1,4 @@
+# Build context only needs the Dockerfile itself; the toolchain is fetched
+# during build so the image stays reproducible and the context stays tiny.
+*
+!Dockerfile

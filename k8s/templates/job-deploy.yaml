@@ -1,0 +1,165 @@
+# One-shot adb deploy/test Job against a WearOS watch over Wi-Fi.
+# Rendered by scripts/deploy.sh, which fills the double-underscore values.
+# Reference copy; prefer running the script.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app: offbook-deploy
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: __DEADLINE__
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: offbook-deploy
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: adb
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              target="$WATCH_IP:$WATCH_PORT"
+              adb start-server >/dev/null 2>&1 || true
+
+              # Wait until the watch's adb port accepts TCP (bash /dev/tcp).
+              await_port() {
+                local ip="$1" port="$2" waited=0 limit="$WAIT_SECONDS"
+                while [ "$waited" -lt "$limit" ]; do
+                  if (echo > "/dev/tcp/$ip/$port") >/dev/null 2>&1; then
+                    echo "== $ip:$port reachable after ${waited}s"
+                    return 0
+                  fi
+                  printf '== waiting for %s:%s (%ss/%ss)\n' "$ip" "$port" "$waited" "$limit"
+                  sleep 5
+                  waited=$((waited + 5))
+                done
+                echo "!! $ip:$port never became reachable within ${limit}s" >&2
+                return 1
+              }
+
+              # adb connect until the device reports state=device.
+              await_device() {
+                local waited=0
+                await_port "$WATCH_IP" "$WATCH_PORT" || return 1
+                while [ "$waited" -lt "$WAIT_SECONDS" ]; do
+                  adb connect "$target" >/dev/null 2>&1 || true
+                  if [ "$(adb -s "$target" get-state 2>/dev/null)" = "device" ]; then
+                    echo "== watch online ($target)"
+                    return 0
+                  fi
+                  printf '== waiting for device state (%ss/%ss)\n' "$waited" "$WAIT_SECONDS"
+                  sleep 5
+                  waited=$((waited + 5))
+                done
+                echo "!! watch did not reach state=device within ${WAIT_SECONDS}s" >&2
+                return 1
+              }
+
+              if [ -n "$PAIR_CODE" ]; then
+                echo "== pairing with $WATCH_IP:$PAIR_PORT"
+                await_port "$WATCH_IP" "$PAIR_PORT"
+                adb pair "$WATCH_IP:$PAIR_PORT" "$PAIR_CODE"
+              fi
+
+              case "$ACTION" in
+                pair)
+                  echo "== paired; trying an initial connect (the watch may rotate its port)"
+                  adb connect "$target" || true
+                  adb devices -l
+                  ;;
+                wait | connect)
+                  await_device || exit 1
+                  echo "== connected devices:"
+                  adb devices -l
+                  ;;
+                uninstall)
+                  await_device && {
+                    echo "== uninstalling $APP_ID from $target"
+                    adb -s "$target" uninstall "$APP_ID"
+                  }
+                  ;;
+                logcat)
+                  await_device && {
+                    echo "== recent logcat from $target"
+                    adb -s "$target" logcat -d -t 500 | grep -iE "offbook|androidruntime|cr_" \
+                      || adb -s "$target" logcat -d -t 200
+                  }
+                  ;;
+                launch)
+                  await_device && {
+                    echo "== launching $MAIN_ACTIVITY on $target"
+                    adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
+                  }
+                  ;;
+                shot)
+                  await_device && {
+                    echo "== capturing screenshot from $target"
+                    mkdir -p /artifacts
+                    name="watch-$(date +%Y%m%d-%H%M%S).png"
+                    adb -s "$target" exec-out screencap -p > "/artifacts/$name"
+                    chmod 644 "/artifacts/$name"
+                    ls -lh "/artifacts/$name"
+                  }
+                  ;;
+                *)
+                  await_device && {
+                    echo "== installing $APK on $target"
+                    adb -s "$target" install -r "$APK"
+                    if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
+                      adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
+                    fi
+                  }
+                  ;;
+              esac
+          env:
+            - name: ACTION
+              value: "__ACTION__"
+            - name: WATCH_IP
+              value: "__WATCH_IP__"
+            - name: WATCH_PORT
+              value: "__WATCH_PORT__"
+            - name: PAIR_CODE
+              value: "__PAIR_CODE__"
+            - name: PAIR_PORT
+              value: "__PAIR_PORT__"
+            - name: WAIT_SECONDS
+              value: "__WAIT_SECONDS__"
+            - name: APK
+              value: "__APK__"
+            - name: LAUNCH_AFTER_INSTALL
+              value: "__LAUNCH_AFTER_INSTALL__"
+            - name: APP_ID
+              value: "__APP_ID__"
+            - name: MAIN_ACTIVITY
+              value: "__MAIN_ACTIVITY__"
+            - name: HOME
+              value: /tmp/home
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: artifacts
+              mountPath: /artifacts
+      volumes:
+        - name: workspace
+          hostPath:
+            path: __WORKSPACE_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: artifacts
+          hostPath:
+            path: __ARTIFACTS_HOSTPATH__
+            type: DirectoryOrCreate

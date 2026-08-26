@@ -70,44 +70,42 @@ Once the application is installed, you can use the built-in update checker:
 
 ## Building
 
-The repo lives on a NAS (`/Data`) that is also a k3s node, so local builds are run as one-shot Kubernetes Jobs on that node. This avoids needing a local JDK/SDK: the toolchain (JDK 21 + Android SDK) lives in a container image.
-
-### Prerequisites
-
-- A `kubectl` that can talk to the local cluster. If it isn't on `PATH`, set the `KUBECTL` env var (e.g. `KUBECTL=/Data/files/repos/kubectl`).
-- The build image must exist in the cluster's containerd (first time only, see below).
-
-### Build the toolchain image (first time only)
+No JDK or Android SDK is needed on this machine: builds run as one-shot
+Kubernetes Jobs on the local k3s cluster (the colima VM with the
+`docker+k3s` runtime), driven by tooling that lives in [`k8s/`](k8s/README.md).
 
 ```bash
-KUBECTL=/Data/files/repos/kubectl ./build-env/build-image.sh
+# one-time: build the JDK21+SDK toolchain image into k3s containerd
+./k8s/scripts/image.sh
+
+# build (default task: assembleDebug)
+./k8s/scripts/build.sh
+
+# signed release APK (keystore creds pass through from local.properties)
+./k8s/scripts/build.sh --task assembleRelease
 ```
 
-This builds `docker.io/library/android-build:jdk21` with the host docker daemon and imports it into k3s containerd.
+Sources are synced to `k8s/.workspace`, mounted into the Job via hostPath,
+logs stream to your terminal (`k8s/.cache/last-build.log` keeps the last),
+and APK/AAB outputs are copied back into `app/build/outputs`. Nothing runs
+between builds — each build is a short-lived Job.
 
-### Run a build
+### Testing on a Wear OS watch
+
+The same cluster can install and exercise builds on a physical watch over
+Wi-Fi ADB (in-cluster emulation is not possible under colima on Apple
+Silicon — no nested KVM):
 
 ```bash
-# default task: assembleDebug
-KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh
-
-# build a release APK
-KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh assembleRelease
-
-# pass extra gradle args
-KUBECTL=/Data/files/repos/kubectl ./build-env/build.sh assembleDebug --extra --stacktrace
+./k8s/scripts/deploy.sh --ip <watch-ip> --launch      # install + open app
+./k8s/scripts/deploy.sh --ip <watch-ip> --action shot # screenshot -> k8s/.artifacts/
 ```
 
-What happens:
+Pairing, logcat and uninstall actions are documented in [k8s/README.md](k8s/README.md).
 
-- A one-shot `Job` is created in the `headnet` namespace, pinned to the `luxai` node, mounting the NAS `/Data` (source + Gradle/Android caches) into the container.
-- It runs `./gradlew <task>` with `GRADLE_USER_HOME` pointed at `/Data/android-build/cache/gradle`, so dependency caches survive between builds.
-- The full Gradle log is streamed to your terminal and saved to `/Data/android-build/cache/last-build.log`.
-- Built APKs are listed from `app/build/outputs`; the Job is deleted automatically on success (use `--keep-job` to retain it).
-
-Common options: `--project PATH`, `--image TAG`, `--job NAME`, `--namespace NS`, `--cache PATH`, `--extra ARGS`, `--keep-job`. Run `./build-env/build.sh --help` for details.
-
-> Note: `build-env/` is local tooling (kept out of git); the CI workflow in `.github/workflows/ci.yml` builds the same project on GitHub Actions runners.
+> Note: `k8s/.workspace`, `k8s/.cache` and `k8s/.artifacts` are runtime dirs
+> kept out of git; the CI workflow in `.github/workflows/ci.yml` builds the
+> same project on GitHub Actions runners.
 
 ## Roadmap & Future Features
 
