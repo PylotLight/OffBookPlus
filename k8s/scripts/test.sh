@@ -54,19 +54,25 @@ save_watch_port() {
 
 # Run deploy.sh with the preset defaults. Falls back to port auto-discovery
 # once if a remembered port no longer works (e.g. after a watch reboot).
+# Discovered ports are saved even when the action itself fails.
 run_deploy() {
     need_watch_ip
+    local rc=0
     if [ -n "${WATCH_PORT:-}" ]; then
-        if "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" --port "$WATCH_PORT" "$@"; then
-            grep -q "^WATCH_PORT=" "$WATCH_LOCAL" 2>/dev/null ||
-                printf "WATCH_PORT=%s\n" "$WATCH_PORT" >>"$WATCH_LOCAL"
+        "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" --port "$WATCH_PORT" "$@" || rc=$?
+        save_port_from_log
+        if [ "$rc" -eq 0 ]; then
             return 0
         fi
+        if grep -q "== watch online" "$CACHE_HOST/last-deploy.log" 2>/dev/null; then
+            return "$rc"
+        fi
         warn "remembered port $WATCH_PORT failed; rediscovering"
-        "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" "$@" || return 1
-        return 0
     fi
-    "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" "$@" || return 1
+    rc=0
+    "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" "$@" || rc=$?
+    save_port_from_log
+    return "$rc"
 }
 
 save_port_from_log() {
@@ -130,49 +136,45 @@ echo "PINNED_STATE=$st"
         fi
         [ -f "${APK_SRC:-}" ] || die "apk not found: ${APK_SRC:-}"
         info "installing $(basename "$APK_SRC")"
-        run_deploy --action install --apk "$APK_SRC" --launch --app-id "$APP_ID_DEBUG" &&
-            save_port_from_log
+        run_deploy --action install --apk "$APK_SRC" --launch --app-id "$APP_ID_DEBUG"
         ;;
 
     launch)
-        run_deploy --action launch --app-id "$APP_ID_DEBUG" && save_port_from_log
+        run_deploy --action launch --app-id "$APP_ID_DEBUG"
         ;;
 
     shot)
-        run_deploy --action shot --app-id "$APP_ID_DEBUG" && save_port_from_log
+        run_deploy --action shot --app-id "$APP_ID_DEBUG"
         info "screenshots in k8s/.artifacts/"
         ;;
 
     log)
-        run_deploy --action logcat && save_port_from_log
+        run_deploy --action logcat
         ;;
 
     uninstall)
-        run_deploy --action uninstall --app-id "$APP_ID_DEBUG" && save_port_from_log
+        run_deploy --action uninstall --app-id "$APP_ID_DEBUG"
         ;;
 
     tap)
         [ $# -ge 2 ] || die "usage: $0 tap X Y"
-        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "input keyevent KEYCODE_WAKEUP; input tap $1 $2" &&
-            save_port_from_log
+        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "input keyevent KEYCODE_WAKEUP; input tap $1 $2"
         ;;
 
     swipe)
         [ $# -ge 4 ] || die "usage: $0 swipe X1 Y1 X2 Y2 [ms]"
         run_deploy --action shell --app-id "$APP_ID_DEBUG" \
-            --shell-cmd "input keyevent KEYCODE_WAKEUP; input swipe $1 $2 $3 $4 ${5:-300}" &&
-            save_port_from_log
+            --shell-cmd "input keyevent KEYCODE_WAKEUP; input swipe $1 $2 $3 $4 ${5:-300}"
         ;;
 
     key)
         [ $# -ge 1 ] || die "usage: $0 key KEYCODE"
-        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "input keyevent $1" &&
-            save_port_from_log
+        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "input keyevent $1"
         ;;
 
     shell)
         [ $# -ge 1 ] || die 'usage: $0 shell "watch command"'
-        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "$1" && save_port_from_log
+        run_deploy --action shell --app-id "$APP_ID_DEBUG" --shell-cmd "$1"
         ;;
 
     *)

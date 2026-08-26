@@ -34,7 +34,7 @@ spec:
             - name: GRADLE_USER_HOME
               value: /cache/gradle
             - name: HOME
-              value: /tmp/home
+              value: /cache/build-home
           resources:
             requests:
               cpu: "1"

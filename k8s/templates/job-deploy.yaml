@@ -72,14 +72,21 @@ spec:
                   [ -n "$port" ] && echo "== unicast mDNS answered"
                 fi
                 if [ -z "$port" ]; then
-                  for pass in 1 2 3; do
-                    echo "== fast TCP sweep pass $pass/3 (~10s)"
-                    scan="$(nmap -Pn --open -T5 --min-rate 4000 --max-retries 1 --host-timeout 25s \
-                      -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
-                    port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
-                    [ -n "$port" ] && break
-                    sleep 4
-                  done
+                  echo "== parallel TCP-connect sweep (5555 + 32000-61000)"
+                  port="$(
+                    export ip="$WATCH_IP"
+                    { echo 5555; seq 32000 61000; } | xargs -P 20 -n 250 bash -c '
+                      for p in "$@"; do
+                        timeout 1 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null && echo "$p"
+                      done
+                    ' _ 2>/dev/null | head -1
+                  )"
+                  [ -n "$port" ] && echo "== sweep hit: $port"
+                fi
+                if [ -z "$port" ]; then
+                  echo "== fallback: polite nmap sweep (up to ~2 min)"
+                  scan="$(nmap -Pn --open -T4 --max-retries 2 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                  port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
                 fi
                 [ -n "$port" ] || return 1
                 target="$WATCH_IP:$port"
@@ -186,13 +193,20 @@ spec:
                   }
                   ;;
                 *)
-                  await_device && {
-                    echo "== installing $APK on $target"
-                    adb -s "$target" install -r "$APK"
-                    if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
-                      adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
-                    fi
-                  }
+                  await_device || exit 1
+                  echo "== installing $APK on $target"
+                  out="$(adb -s "$target" install -r "$APK" 2>&1)" || true
+                  echo "$out"
+                  if grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE" <<<"$out"; then
+                    echo "== signature changed; removing stale $APP_ID and retrying"
+                    adb -s "$target" uninstall "$APP_ID" >/dev/null 2>&1 || true
+                    out="$(adb -s "$target" install -r "$APK" 2>&1)" || true
+                    echo "$out"
+                  fi
+                  grep -q "Success" <<<"$out" || exit 1
+                  if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
+                    adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
+                  fi
                   ;;
               esac
           env:
