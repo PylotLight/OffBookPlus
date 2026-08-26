@@ -25,6 +25,9 @@ spec:
           command: ["/bin/bash", "-ec"]
           args:
             - |
+              mkdir -p /cache/build-home/.android
+              rm -rf /root/.android
+              ln -s /cache/build-home/.android /root/.android
               ./gradlew $GRADLE_ARGS
           env:
             - name: GRADLE_ARGS
