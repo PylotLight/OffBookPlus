@@ -42,6 +42,7 @@ while [ $# -gt 0 ]; do
         --keep-job) KEEP_JOB=1; shift ;;
         --wait) WAIT_SECONDS="$2"; shift 2 ;;
         --shell-cmd) SHELL_CMD="$2"; shift 2 ;;
+        --adb-cmd) ADB_CMD="$2"; shift 2 ;;
         -h | --help) usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -51,11 +52,14 @@ done
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]] || die "--wait expects seconds, got '$WAIT_SECONDS'"
 
 case "$ACTION" in
-    install | launch | shot | logcat | uninstall | connect | pair | wait | shell) ;;
+    install | launch | shot | logcat | uninstall | connect | pair | wait | shell | adbcmd) ;;
     *) die "invalid action '$ACTION'" ;;
 esac
 if [ "$ACTION" = shell ]; then
     [ -n "${SHELL_CMD:-}" ] || die "--action shell requires --shell-cmd"
+fi
+if [ "$ACTION" = adbcmd ]; then
+    [ -n "${ADB_CMD:-}" ] || die "--action adbcmd requires --adb-cmd"
 fi
 
 ensure_cluster
@@ -104,6 +108,7 @@ render_template "$K8S_DIR/templates/job-deploy.yaml" "$RENDERED" \
     "APP_ID=$APP_ID" \
     "MAIN_ACTIVITY=$MAIN_ACTIVITY" \
     "SHELL_CMD_B64=$(printf '%s' "${SHELL_CMD:-}" | base64)" \
+    "ADB_CMD_B64=$(printf '%s' "${ADB_CMD:-}" | base64)" \
     "WORKSPACE_HOSTPATH=$WORKSPACE_HOST" \
     "ARTIFACTS_HOSTPATH=$ARTIFACTS_HOST" \
     "CACHE_HOSTPATH=$CACHE_HOST"

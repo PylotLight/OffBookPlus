@@ -71,6 +71,13 @@ spec:
               fi
 
               case "$ACTION" in
+                adbcmd)
+                  # client-side adb command (e.g. pinning tcpip mode); runs
+                  # against $target without requiring device state
+                  adb connect "$target" >/dev/null 2>&1 || true
+                  echo "== adb client cmd on $target"
+                  eval "$(echo "$ADB_CMD_B64" | base64 -d)"
+                  ;;
                 pair)
                   echo "== paired; trying an initial connect (the watch may rotate its port)"
                   adb connect "$target" || true
@@ -148,6 +155,8 @@ spec:
               value: "__MAIN_ACTIVITY__"
             - name: SHELL_CMD_B64
               value: "__SHELL_CMD_B64__"
+            - name: ADB_CMD_B64
+              value: "__ADB_CMD_B64__"
             - name: HOME
               value: /cache/adb-home
           resources:
