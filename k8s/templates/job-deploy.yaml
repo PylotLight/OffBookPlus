@@ -27,6 +27,7 @@ spec:
           args:
             - |
               target="$WATCH_IP:$WATCH_PORT"
+              mkdir -p "$HOME"
               adb start-server >/dev/null 2>&1 || true
 
               # Wait until the watch's adb port accepts TCP (bash /dev/tcp).
