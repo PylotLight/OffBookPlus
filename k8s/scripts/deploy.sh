@@ -29,6 +29,7 @@ KEEP_JOB=0
 WAIT_SECONDS="$WATCH_WAIT_SECONDS"
 SHELL_CMD=""
 ADB_CMD=""
+APP_ID_OVERRIDE=""
 
 usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -47,6 +48,7 @@ while [ $# -gt 0 ]; do
         --wait) WAIT_SECONDS="$2"; shift 2 ;;
         --shell-cmd) SHELL_CMD="$2"; shift 2 ;;
         --adb-cmd) ADB_CMD="$2"; shift 2 ;;
+        --app-id) APP_ID_OVERRIDE="$2"; shift 2 ;;
         -h | --help) usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -79,6 +81,7 @@ notify() {
 run_job() {
     local act="$1" prt="$2"
     local name rendered apk_in_container="/workspace/app/build/outputs/apk/debug/latest.apk"
+    local app_id="${APP_ID_OVERRIDE:-$APP_ID}"
 
     if [ "$act" = install ]; then
         if [ -n "$APK_REL" ]; then
@@ -114,7 +117,7 @@ run_job() {
         "WAIT_SECONDS=$WAIT_SECONDS" \
         "APK=$apk_in_container" \
         "LAUNCH_AFTER_INSTALL=$([ "$LAUNCH" -eq 1 ] && echo yes || echo "")" \
-        "APP_ID=$APP_ID" \
+        "APP_ID=$app_id" \
         "MAIN_ACTIVITY=$MAIN_ACTIVITY" \
         "SHELL_CMD_B64=$(printf '%s' "$SHELL_CMD" | base64)" \
         "ADB_CMD_B64=$(printf '%s' "$ADB_CMD" | base64)" \
