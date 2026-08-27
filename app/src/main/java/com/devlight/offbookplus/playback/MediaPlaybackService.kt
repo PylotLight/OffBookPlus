@@ -214,32 +214,54 @@ class MediaPlaybackService : MediaSessionService() {
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            Log.i(TAG, "onCustomCommand ${customCommand.customAction} args=$args")
             if (customCommand.customAction == PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY) {
                 val mediaId = args.getString(PlaybackContract.KEY_MEDIA_ID)
                 val mediaTypeString = args.getString(PlaybackContract.KEY_MEDIA_TYPE)
                 val mediaType = try { MediaType.valueOf(mediaTypeString ?: "AUDIOBOOKS") } catch (e: IllegalArgumentException) { MediaType.AUDIOBOOKS }
+                Log.i(TAG, "LOAD_MEDIA_AND_PLAY id=$mediaId type=$mediaType")
 
                 if (mediaId != null) {
                     loadPlaylistFor(mediaId, mediaType)
+                } else {
+                    Log.w(TAG, "mediaId null, ignoring")
                 }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
         private fun loadPlaylistFor(bookId: String, mediaType: MediaType) {
+            Log.i(TAG, "loadPlaylistFor id=$bookId type=$mediaType")
             serviceScope.launch {
                 val (playlistItems, progress, startIndex) = withContext(Dispatchers.IO) {
                     val db = AppDatabase.getInstance(applicationContext)
-                    val selectedItemEntity = db.mediaItemDao().getItemsByMediaType(mediaType.name).find { it.id == bookId }
-                    if (selectedItemEntity == null) return@withContext null
+                    val allForType = db.mediaItemDao().getItemsByMediaType(mediaType.name)
+                    Log.i(TAG, "lookup id=$bookId in ${allForType.size} items for $mediaType, firstId=${allForType.firstOrNull()?.id}")
+                    // DB ids are stored as Uri.fromFile().toString() which percent-encodes spaces as %20,
+                    // while the navigation round-trip via URLEncoder/URLDecoder yields a decoded form with spaces.
+                    // Compare after Uri decoding so both forms match.
+                    val decodedBookId = android.net.Uri.decode(bookId)
+                    val selectedItemEntity = allForType.find {
+                        it.id == bookId || android.net.Uri.decode(it.id) == decodedBookId || it.id == android.net.Uri.encode(bookId)
+                    }
+                    if (selectedItemEntity == null) {
+                        Log.w(TAG, "selectedItemEntity null for id=$bookId decoded=$decodedBookId type=$mediaType")
+                        // dump a few ids for debugging the mismatch
+                        allForType.take(3).forEach { Log.w(TAG, "candidate id=${it.id} decoded=${android.net.Uri.decode(it.id)}") }
+                        return@withContext null
+                    }
 
                     val items = db.mediaItemDao().getItemsByPlaylistId(selectedItemEntity.playlistId)
                     val prog = db.progressDao().loadProgress(selectedItemEntity.playlistId)
                     val startIdx = items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0)
+                    Log.i(TAG, "found playlist ${selectedItemEntity.playlistId} size=${items.size} startIdx=$startIdx prog=$prog")
 
                     Triple(items, prog, startIdx)
                 } ?: return@launch
 
-                if (playlistItems.isEmpty()) return@launch
+                if (playlistItems.isEmpty()) {
+                    Log.w(TAG, "playlistItems empty, abort")
+                    return@launch
+                }
                 val mediaItems = playlistItems.map { item ->
                     val metadata = MediaMetadata.Builder()
                         .setAlbumTitle(item.playlistId)
@@ -258,21 +280,29 @@ class MediaPlaybackService : MediaSessionService() {
                 exoPlayer.stop()
                 exoPlayer.clearMediaItems()
                 
-                val actualTrackIndex = if (progress != null && (startIndex == progress.trackIndex || startIndex == 0)) {
+                // Fix: explicit tap wins. Only resume saved position when the tapped item
+                // is the same track that progress was saved for. The old
+                // `|| startIndex == 0` made every tap on the first card resume
+                // whatever track was last saved (wrong item, or OOB crash after
+                // rescan when playlist shrank).
+                val rawTrackIndex = if (progress != null && startIndex == progress.trackIndex) {
                     progress.trackIndex
                 } else {
                     startIndex
                 }
+                val actualTrackIndex = rawTrackIndex.coerceIn(0, (mediaItems.size - 1).coerceAtLeast(0))
                 val actualPosition = if (progress != null && actualTrackIndex == progress.trackIndex) {
-                    progress.playbackPositionMs
+                    progress.playbackPositionMs.coerceAtLeast(0L)
                 } else {
                     0L
                 }
                 
+                Log.i(TAG, "setMediaItems size=${mediaItems.size} index=$actualTrackIndex pos=$actualPosition shuffle=${progress?.shuffleModeEnabled}")
                 exoPlayer.shuffleModeEnabled = progress?.shuffleModeEnabled ?: false
                 exoPlayer.setMediaItems(mediaItems, actualTrackIndex, actualPosition)
                 exoPlayer.prepare()
                 exoPlayer.play()
+                Log.i(TAG, "exoPlayer.play() called index=$actualTrackIndex")
             }
         }
     }

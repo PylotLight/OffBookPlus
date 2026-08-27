@@ -41,6 +41,12 @@ android {
             )
             signingConfig = signingConfigs.getByName("release")
         }
+        debug {
+            // Installs alongside the GitHub-Releases build for on-device
+            // testing; provider authorities derive from ${applicationId}.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21

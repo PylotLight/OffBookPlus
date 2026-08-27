@@ -1,0 +1,266 @@
+# One-shot adb deploy/test Job against a WearOS watch over Wi-Fi.
+# Rendered by scripts/deploy.sh, which fills the double-underscore values.
+# Reference copy; prefer running the script.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app: offbook-deploy
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: __DEADLINE__
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: offbook-deploy
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: adb
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              target="$WATCH_IP:$WATCH_PORT"
+              mkdir -p "$HOME"
+              adb start-server >/dev/null 2>&1 || true
+
+              # Wait until the watch's adb port accepts TCP. Return codes:
+              #   0 reachable, 1 timed out (watch likely asleep),
+              #   2 actively refusing (watch awake, port stale).
+              await_port() {
+                local ip="$1" port="$2" waited=0 limit="$WAIT_SECONDS" fast=0 rc
+                while [ "$waited" -lt "$limit" ]; do
+                  rc=0
+                  timeout 3 bash -c "echo > /dev/tcp/$ip/$port" >/dev/null 2>&1 || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "== $ip:$port reachable after ${waited}s"
+                    return 0
+                  fi
+                  if [ "$rc" -ne 124 ]; then
+                    fast=$((fast + 1))
+                    if [ "$fast" -ge 3 ]; then
+                      echo "!! $ip:$port actively refusing (watch awake, port stale)"
+                      return 2
+                    fi
+                  else
+                    fast=0
+                  fi
+                  printf '== waiting for %s:%s (%ss/%ss)\n' "$ip" "$port" "$waited" "$limit"
+                  sleep 5
+                  waited=$((waited + 5))
+                done
+                echo "!! $ip:$port never became reachable within ${limit}s" >&2
+                return 1
+              }
+
+              # Find the watch's current port: mDNS first, then a sweep of
+              # the ephemeral range. Updates $target, prints DISCOVERED_PORT.
+              recover_port() {
+                local port="" scan pass
+                echo "== recovering port: mDNS first"
+                port="$(adb mdns services 2>/dev/null | grep -oE "$WATCH_IP:[0-9]+" | head -1 | cut -d: -f2 || true)"
+                if [ -z "$port" ]; then
+                  echo "== trying unicast mDNS query on $WATCH_IP:5353"
+                  scan="$(nmap -sU -Pn -p 5353 --script dns-service-discovery --script-timeout 8s "$WATCH_IP" -oN - 2>/dev/null || true)"
+                  port="$(grep -iA4 'adb-tls-connect' <<<"$scan" | grep -oE 'port[=: ]+[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+                  [ -n "$port" ] && echo "== unicast mDNS answered"
+                fi
+                if [ -z "$port" ]; then
+                  echo "== parallel TCP-connect sweep (5555 + 32000-61000)"
+                  port="$(
+                    export ip="$WATCH_IP"
+                    { echo 5555; seq 32000 61000; } | xargs -P 20 -n 250 bash -c '
+                      for p in "$@"; do
+                        timeout 1 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null && echo "$p"
+                      done
+                    ' _ 2>/dev/null | head -1
+                  )"
+                  [ -n "$port" ] && echo "== sweep hit: $port"
+                fi
+                if [ -z "$port" ]; then
+                  echo "== fallback: polite nmap sweep (up to ~2 min)"
+                  scan="$(nmap -Pn --open -T4 --max-retries 2 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
+                  port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                fi
+                [ -n "$port" ] || return 1
+                target="$WATCH_IP:$port"
+                adb connect "$target" >/dev/null 2>&1 || true
+                echo "DISCOVERED_PORT=$port"
+              }
+
+              # adb connect until the device reports state=device. If the
+              # given port is stale or dead, recover the real one inline.
+              await_device() {
+                local waited=0 rc=0
+                await_port "$WATCH_IP" "$WATCH_PORT" || rc=$?
+                if [ "$rc" -ne 0 ]; then
+                  [ "$rc" -eq 2 ] && echo "== port stale; recovering inline" || echo "== port dead; trying recovery anyway"
+                  if ! recover_port; then
+                    echo "!! no open adb port found on $WATCH_IP (wake the watch, check Debug over Wi-Fi, retry)" >&2
+                    return 1
+                  fi
+                fi
+                while [ "$waited" -lt "$WAIT_SECONDS" ]; do
+                  adb connect "$target" >/dev/null 2>&1 || true
+                  if [ "$(adb -s "$target" get-state 2>/dev/null)" = "device" ]; then
+                    echo "== watch online ($target)"
+                    return 0
+                  fi
+                  printf '== waiting for device state (%ss/%ss)\n' "$waited" "$WAIT_SECONDS"
+                  sleep 5
+                  waited=$((waited + 5))
+                done
+                echo "!! watch did not reach state=device within ${WAIT_SECONDS}s" >&2
+                return 1
+              }
+
+              if [ -n "$PAIR_CODE" ]; then
+                echo "== pairing with $WATCH_IP:$PAIR_PORT"
+                await_port "$WATCH_IP" "$PAIR_PORT" || true
+                adb pair "$WATCH_IP:$PAIR_PORT" "$PAIR_CODE"
+              fi
+
+              case "$ACTION" in
+                discover)
+                  recover_port || { echo "!! no open port found (wake the watch, check Debug over Wi-Fi, retry)"; exit 1; }
+                  sleep 2
+                  state="$(adb -s "$target" get-state 2>/dev/null || true)"
+                  if [ "$state" != "device" ]; then
+                    echo "!! $target did not yield an authorized device"
+                    exit 1
+                  fi
+                  ;;
+                adbcmd)
+                  # client-side adb command (e.g. pinning tcpip mode); runs
+                  # against $target without requiring device state
+                  adb connect "$target" >/dev/null 2>&1 || true
+                  echo "== adb client cmd on $target"
+                  eval "$(echo "$ADB_CMD_B64" | base64 -d)"
+                  ;;
+                pair)
+                  echo "== paired; trying an initial connect (the watch may rotate its port)"
+                  adb connect "$target" || true
+                  adb devices -l
+                  ;;
+                wait | connect)
+                  await_device || exit 1
+                  echo "== connected devices:"
+                  adb devices -l
+                  ;;
+                uninstall)
+                  await_device && {
+                    echo "== uninstalling $APP_ID from $target"
+                    adb -s "$target" uninstall "$APP_ID"
+                  }
+                  ;;
+                logcat)
+                  await_device && {
+                    echo "== recent logcat from $target"
+                    adb -s "$target" logcat -d -t 500 | grep -iE "offbook|androidruntime|cr_" \
+                      || adb -s "$target" logcat -d -t 200
+                  }
+                  ;;
+                launch)
+                  await_device && {
+                    echo "== launching $MAIN_ACTIVITY on $target"
+                    adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
+                  }
+                  ;;
+                shell)
+                  await_device || exit 1
+                  echo "== shell on $target"
+                  adb -s "$target" shell "$(echo "$SHELL_CMD_B64" | base64 -d)"
+                  ;;
+                shot)
+                  await_device && {
+                    echo "== capturing screenshot from $target"
+                    adb -s "$target" shell input keyevent KEYCODE_WAKEUP || true
+                    sleep 1
+                    if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
+                      adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY" >/dev/null 2>&1 || true
+                      sleep 3
+                    fi
+                    mkdir -p /artifacts
+                    name="watch-$(date +%Y%m%d-%H%M%S).png"
+                    adb -s "$target" exec-out screencap -p > "/artifacts/$name"
+                    chmod 644 "/artifacts/$name"
+                    ls -lh "/artifacts/$name"
+                  }
+                  ;;
+                *)
+                  await_device || exit 1
+                  echo "== installing $APK on $target"
+                  out="$(adb -s "$target" install -r "$APK" 2>&1)" || true
+                  echo "$out"
+                  if grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE" <<<"$out"; then
+                    echo "== signature changed; removing stale $APP_ID and retrying"
+                    adb -s "$target" uninstall "$APP_ID" >/dev/null 2>&1 || true
+                    out="$(adb -s "$target" install -r "$APK" 2>&1)" || true
+                    echo "$out"
+                  fi
+                  grep -q "Success" <<<"$out" || exit 1
+                  if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
+                    adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY"
+                  fi
+                  ;;
+              esac
+          env:
+            - name: ACTION
+              value: "__ACTION__"
+            - name: WATCH_IP
+              value: "__WATCH_IP__"
+            - name: WATCH_PORT
+              value: "__WATCH_PORT__"
+            - name: PAIR_CODE
+              value: "__PAIR_CODE__"
+            - name: PAIR_PORT
+              value: "__PAIR_PORT__"
+            - name: WAIT_SECONDS
+              value: "__WAIT_SECONDS__"
+            - name: APK
+              value: "__APK__"
+            - name: LAUNCH_AFTER_INSTALL
+              value: "__LAUNCH_AFTER_INSTALL__"
+            - name: APP_ID
+              value: "__APP_ID__"
+            - name: MAIN_ACTIVITY
+              value: "__MAIN_ACTIVITY__"
+            - name: SHELL_CMD_B64
+              value: "__SHELL_CMD_B64__"
+            - name: ADB_CMD_B64
+              value: "__ADB_CMD_B64__"
+            - name: HOME
+              value: /cache/adb-home
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: artifacts
+              mountPath: /artifacts
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: workspace
+          hostPath:
+            path: __WORKSPACE_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: artifacts
+          hostPath:
+            path: __ARTIFACTS_HOSTPATH__
+            type: DirectoryOrCreate
+        - name: cache
+          hostPath:
+            path: __CACHE_HOSTPATH__
+            type: DirectoryOrCreate

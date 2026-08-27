@@ -25,8 +25,13 @@ app/release
 # Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
 .kotlin/
 
-# Local build tooling (one-shot k3s Job runner); see README "Building"
+# Local build tooling (one-shot k3s Job runner); see k8s/README.md and README "Building"
 build-env/
+k8s/.workspace/
+k8s/.cache/
+k8s/.artifacts/
+k8s/.watch.local
+k8s/*.tar
 
 # BlueJ files
 *.ctxt
