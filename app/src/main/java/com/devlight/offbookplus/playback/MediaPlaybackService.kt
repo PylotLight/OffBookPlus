@@ -46,7 +46,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -369,7 +368,7 @@ class MediaPlaybackService : MediaSessionService() {
                         queueId = PlaybackContract.MUSIC_QUEUE_ID,
                         mediaType = MediaType.MUSIC,
                         items = shuffled,
-                        startIndex = Random.nextInt(shuffled.size),
+                        startIndex = 0,
                         startPositionMs = 0L,
                         shuffle = true
                     )

@@ -155,6 +155,7 @@ fun WearApp(startAtPlayer: Boolean = false) {
                         playbackViewModel.playMediaItem(mediaId, mediaTypeForPlay)
                         navController.navigate(NavRoutes.PLAYER_ROUTE)
                     },
+                    onNavigateToPlayer = { navController.navigate(NavRoutes.PLAYER_ROUTE) },
                     libraryViewModel = libraryViewModel,
                     playbackViewModel = playbackViewModel
                 )

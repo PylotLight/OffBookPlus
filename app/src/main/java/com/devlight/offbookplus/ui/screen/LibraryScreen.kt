@@ -17,6 +17,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.Card
@@ -32,6 +34,7 @@ import java.util.concurrent.TimeUnit
 fun LibraryScreen(
     mediaType: MediaType,
     onItemClick: (mediaId: String, mediaType: MediaType) -> Unit,
+    onNavigateToPlayer: () -> Unit = {},
     libraryViewModel: LibraryViewModel,
     playbackViewModel: PlaybackViewModel
 ) {
@@ -49,13 +52,16 @@ fun LibraryScreen(
         }
         if (mediaType == MediaType.MUSIC) {
             item {
-                Card(onClick = { playbackViewModel.shuffleAllMusic() }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Shuffle All", style = MaterialTheme.typography.titleSmall)
-                    }
-                }
+                Chip(
+                    onClick = {
+                        playbackViewModel.shuffleAllMusic()
+                        onNavigateToPlayer()
+                    },
+                    label = { Text("Shuffle All", maxLines = 1) },
+                    icon = { Icon(Icons.Filled.Shuffle, contentDescription = null) },
+                    colors = ChipDefaults.primaryChipColors(),
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
         if (mediaItems.isEmpty()) {

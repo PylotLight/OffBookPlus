@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -184,9 +185,27 @@ fun PlayerScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+                .padding(bottom = 16.dp, start = 12.dp, end = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            Text(
+                text = buildString {
+                    append(formatTime(state.currentPositionMs))
+                    append(" / ")
+                    append(formatTime(state.durationMs))
+                    if (state.trackCount > 1) {
+                        append(" · ${state.currentChapterIndex + 1}/${state.trackCount}")
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { volumePanelOpen = if (volumePanelOpen > 0.5f) 0f else 1f }
+                    .padding(horizontal = 10.dp, vertical = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -240,26 +259,10 @@ fun PlayerScreen(
                 }
             }
 
-            Text(
-                text = buildString {
-                    append(formatTime(state.currentPositionMs))
-                    append(" / ")
-                    append(formatTime(state.durationMs))
-                    if (state.trackCount > 1) {
-                        append(" · ${state.currentChapterIndex + 1}/${state.trackCount}")
-                    }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { volumePanelOpen = if (volumePanelOpen > 0.5f) 0f else 1f }
-                    .padding(horizontal = 10.dp, vertical = 2.dp)
-            )
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -276,6 +279,7 @@ fun PlayerScreen(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
+                        .offset(y = 4.dp)
                         .clip(RoundedCornerShape(percent = 50))
                         .background(MaterialTheme.colorScheme.surfaceContainer)
                         .clickable(enabled = state.isReady) {
