@@ -24,19 +24,31 @@ class DevInitProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val ctx = context ?: return false
         val app = ctx.applicationContext as? Application ?: return false
+        var foregroundCount = 0
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                // Only while the debug app is visible — lets the watch sleep normally otherwise.
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
 
-            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStarted(activity: Activity) {
+                if (foregroundCount++ == 0) {
+                    ContextCompat.startForegroundService(ctx, Intent(ctx, DevKeepAwakeService::class.java))
+                }
+            }
+
+            override fun onActivityStopped(activity: Activity) {
+                if (--foregroundCount == 0) {
+                    ctx.stopService(Intent(ctx, DevKeepAwakeService::class.java))
+                }
+                if (foregroundCount < 0) foregroundCount = 0
+            }
+
             override fun onActivityResumed(activity: Activity) = Unit
             override fun onActivityPaused(activity: Activity) = Unit
-            override fun onActivityStopped(activity: Activity) = Unit
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
-        ContextCompat.startForegroundService(ctx, Intent(ctx, DevKeepAwakeService::class.java))
         return true
     }
 
