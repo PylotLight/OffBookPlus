@@ -234,9 +234,13 @@ class MediaPlaybackService : MediaSessionService() {
             serviceScope.launch {
                 val (playlistItems, progress, startIndex) = withContext(Dispatchers.IO) {
                     val db = AppDatabase.getInstance(applicationContext)
-                    val selectedItemEntity = db.mediaItemDao().getItemsByMediaType(mediaType.name).find { it.id == bookId }
+                    val allForType = db.mediaItemDao().getItemsByMediaType(mediaType.name)
+                    Log.i(TAG, "lookup id=$bookId in ${allForType.size} items for $mediaType, firstId=${allForType.firstOrNull()?.id}")
+                    val selectedItemEntity = allForType.find { it.id == bookId }
                     if (selectedItemEntity == null) {
                         Log.w(TAG, "selectedItemEntity null for id=$bookId type=$mediaType")
+                        // dump a few ids for debugging the mismatch
+                        allForType.take(3).forEach { Log.w(TAG, "candidate id=${it.id}") }
                         return@withContext null
                     }
 
