@@ -76,3 +76,5 @@ Hard rules:
   files.
 - Verify third-party APIs against the exact pinned version tag on GitHub, not
   main-branch docs (e.g. Horologist components differ at 0.7.15).
+- For GitHub write operations (release edits, etc.) use `ghp`, not `gh` —
+  the `gh` token 404s on PATCH regardless of scopes.
