@@ -214,32 +214,44 @@ class MediaPlaybackService : MediaSessionService() {
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            Log.i(TAG, "onCustomCommand ${customCommand.customAction} args=$args")
             if (customCommand.customAction == PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY) {
                 val mediaId = args.getString(PlaybackContract.KEY_MEDIA_ID)
                 val mediaTypeString = args.getString(PlaybackContract.KEY_MEDIA_TYPE)
                 val mediaType = try { MediaType.valueOf(mediaTypeString ?: "AUDIOBOOKS") } catch (e: IllegalArgumentException) { MediaType.AUDIOBOOKS }
+                Log.i(TAG, "LOAD_MEDIA_AND_PLAY id=$mediaId type=$mediaType")
 
                 if (mediaId != null) {
                     loadPlaylistFor(mediaId, mediaType)
+                } else {
+                    Log.w(TAG, "mediaId null, ignoring")
                 }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
         private fun loadPlaylistFor(bookId: String, mediaType: MediaType) {
+            Log.i(TAG, "loadPlaylistFor id=$bookId type=$mediaType")
             serviceScope.launch {
                 val (playlistItems, progress, startIndex) = withContext(Dispatchers.IO) {
                     val db = AppDatabase.getInstance(applicationContext)
                     val selectedItemEntity = db.mediaItemDao().getItemsByMediaType(mediaType.name).find { it.id == bookId }
-                    if (selectedItemEntity == null) return@withContext null
+                    if (selectedItemEntity == null) {
+                        Log.w(TAG, "selectedItemEntity null for id=$bookId type=$mediaType")
+                        return@withContext null
+                    }
 
                     val items = db.mediaItemDao().getItemsByPlaylistId(selectedItemEntity.playlistId)
                     val prog = db.progressDao().loadProgress(selectedItemEntity.playlistId)
                     val startIdx = items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0)
+                    Log.i(TAG, "found playlist ${selectedItemEntity.playlistId} size=${items.size} startIdx=$startIdx prog=$prog")
 
                     Triple(items, prog, startIdx)
                 } ?: return@launch
 
-                if (playlistItems.isEmpty()) return@launch
+                if (playlistItems.isEmpty()) {
+                    Log.w(TAG, "playlistItems empty, abort")
+                    return@launch
+                }
                 val mediaItems = playlistItems.map { item ->
                     val metadata = MediaMetadata.Builder()
                         .setAlbumTitle(item.playlistId)
@@ -275,10 +287,12 @@ class MediaPlaybackService : MediaSessionService() {
                     0L
                 }
                 
+                Log.i(TAG, "setMediaItems size=${mediaItems.size} index=$actualTrackIndex pos=$actualPosition shuffle=${progress?.shuffleModeEnabled}")
                 exoPlayer.shuffleModeEnabled = progress?.shuffleModeEnabled ?: false
                 exoPlayer.setMediaItems(mediaItems, actualTrackIndex, actualPosition)
                 exoPlayer.prepare()
                 exoPlayer.play()
+                Log.i(TAG, "exoPlayer.play() called index=$actualTrackIndex")
             }
         }
     }
