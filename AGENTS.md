@@ -58,3 +58,21 @@ Hard rules:
 - Playback order is owned by the app and persisted in the `playback_queue`
   table (ExoPlayer's internal shuffle order is never relied upon).
 - Do not add code comments unless asked.
+
+## Verified lessons (do not repeat)
+
+- **End every device session with playback stopped.** Pause via
+  `key KEYCODE_MEDIA_PAUSE`, then verify with a position-frozen check: two
+  shots ~8s apart, timeline band must be pixel-identical. Never infer playback
+  state from button glyphs.
+- **Never trust vision-model defect claims** ("clipped", "overlapping").
+  Verify with an objective pixel scan (python3 + PIL) before changing code;
+  dark-on-dark regions produce routine false positives.
+- The watch screen dozes within ~1 min of inactivity and silently swallows
+  taps. After any idle gap: `key WAKEUP` + a small swipe before interacting.
+- Screen is 466x466 px (~233dp). Don't trust mental dp/px math for round-screen
+  fit — verify with a screenshot + pixel scan.
+- `git status` before every commit: never stage `.idea/`, artifacts, or temp
+  files.
+- Verify third-party APIs against the exact pinned version tag on GitHub, not
+  main-branch docs (e.g. Horologist components differ at 0.7.15).
