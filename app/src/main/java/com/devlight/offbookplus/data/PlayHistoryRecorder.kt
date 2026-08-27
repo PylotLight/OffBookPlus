@@ -12,9 +12,11 @@ class PlayHistoryRecorder(private val db: AppDatabase) {
     private val dao get() = db.playHistoryDao()
 
     /**
-     * Counts one "play" for the given media item. Creates the record on first play.
+     * Counts one completed listen for the given media item, creating the record on
+     * first completion. Items that were only started (skipped before finishing)
+     * never get a history entry.
      */
-    suspend fun recordPlayStarted(
+    suspend fun recordItemFinished(
         mediaId: String,
         playlistId: String,
         mediaType: MediaType,

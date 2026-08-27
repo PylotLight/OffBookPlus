@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Update
@@ -21,15 +23,19 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import com.devlight.offbookplus.ui.NavRoutes
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
+import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 import com.devlight.offbookplus.ui.viewmodel.UpdateStatus
 
 @Composable
 fun SettingsScreen(
     viewModel: LibraryViewModel,
+    playbackViewModel: PlaybackViewModel,
     onNavigate: (String) -> Unit
 ) {
     val updateStatus = viewModel.updateStatus.collectAsState().value
     val downloadProgress = viewModel.downloadProgress.collectAsState().value
+    val rewindMs by playbackViewModel.rewindMs.collectAsState()
+    val forwardMs by playbackViewModel.forwardMs.collectAsState()
     val context = LocalContext.current
     val currentVersion =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
@@ -49,6 +55,22 @@ fun SettingsScreen(
             Text(
                 "Version: $currentVersion",
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+        }
+        item {
+            Chip(
+                onClick = { playbackViewModel.cycleRewindInterval() },
+                label = { Text("Rewind: ${rewindMs / 1000}s") },
+                secondaryLabel = { Text("Tap to change") },
+                icon = { Icon(imageVector = Icons.Default.FastRewind, contentDescription = "Rewind interval") }
+            )
+        }
+        item {
+            Chip(
+                onClick = { playbackViewModel.cycleForwardInterval() },
+                label = { Text("Skip forward: ${forwardMs / 1000}s") },
+                secondaryLabel = { Text("Tap to change") },
+                icon = { Icon(imageVector = Icons.Default.FastForward, contentDescription = "Skip forward interval") }
             )
         }
         item {

@@ -11,8 +11,8 @@ import androidx.room.TypeConverters
  * Defines the entities (tables) and provides access to the DAOs.
  */
 @Database(
-    entities = [PlaybackProgressEntity::class, MediaItemEntity::class, PlayHistoryEntity::class],
-    version = 3,
+    entities = [PlaybackProgressEntity::class, MediaItemEntity::class, PlayHistoryEntity::class, PlaybackQueueEntity::class],
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(MediaTypeConverter::class)
@@ -21,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun progressDao(): ProgressDao
     abstract fun mediaItemDao(): MediaItemDao
     abstract fun playHistoryDao(): PlayHistoryDao
+    abstract fun playbackQueueDao(): PlaybackQueueDao
 
     companion object {
         @Volatile
@@ -33,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "offbookplus_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
@@ -44,6 +45,24 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playback_progress ADD COLUMN shuffleModeEnabled INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS playback_queue (
+                        queueId TEXT NOT NULL PRIMARY KEY,
+                        mediaType TEXT NOT NULL,
+                        orderedIds TEXT NOT NULL,
+                        currentIndex INTEGER NOT NULL DEFAULT 0,
+                        positionMs INTEGER NOT NULL DEFAULT 0,
+                        shuffleEnabled INTEGER NOT NULL DEFAULT 0,
+                        lastUpdatedTimestamp INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
             }
         }
 

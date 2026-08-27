@@ -16,6 +16,9 @@ interface MediaItemDao {
     @Query("SELECT * FROM media_items WHERE playlistId = :playlistId ORDER BY trackNumber ASC")
     suspend fun getItemsByPlaylistId(playlistId: String): List<MediaItemEntity>
 
+    @Query("SELECT * FROM media_items WHERE id IN (:ids)")
+    suspend fun getItemsByIds(ids: List<String>): List<MediaItemEntity>
+
     @Query("DELETE FROM media_items WHERE mediaType = :mediaType")
     suspend fun deleteByMediaType(mediaType: String)
 
