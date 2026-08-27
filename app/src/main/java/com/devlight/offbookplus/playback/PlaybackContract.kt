@@ -7,7 +7,8 @@ package com.devlight.offbookplus.playback
 object PlaybackContract {
     const val COMMAND_LOAD_MEDIA_AND_PLAY = "com.devlight.offbookplus.LOAD_MEDIA_AND_PLAY"
     const val COMMAND_RESUME_LAST_QUEUE = "com.devlight.offbookplus.RESUME_LAST_QUEUE"
-    const val COMMAND_TOGGLE_SHUFFLE = "com.devlight.offbookplus.TOGGLE_SHUFFLE"
+    const val COMMAND_SHUFFLE_MUSIC = "com.devlight.offbookplus.SHUFFLE_MUSIC"
+    const val MUSIC_QUEUE_ID = "all_music_tracks"
     const val KEY_MEDIA_ID = "media_id"
     const val KEY_MEDIA_TYPE = "media_type"
 

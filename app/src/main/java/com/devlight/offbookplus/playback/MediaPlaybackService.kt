@@ -46,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -75,6 +76,7 @@ class MediaPlaybackService : MediaSessionService() {
 
     // --- Play history accounting (battery-conscious: no per-second writes) ---
     private var currentSessionItemId: String? = null
+    private var currentSessionItemType: MediaType? = null
     private var playingSegmentStartElapsed = 0L
     private var pendingPlayTimeMs = 0L
     private var pendingFinish: MediaMeta? = null
@@ -108,6 +110,10 @@ class MediaPlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             endPlaySegment()
             currentSessionItemId = mediaItem?.mediaId
+            currentSessionItemType = mediaItem?.mediaMetadata?.extras
+                ?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)?.let {
+                    try { MediaType.valueOf(it) } catch (e: Exception) { null }
+                }
             pendingPlayTimeMs = 0L
             if (exoPlayer.isPlaying) {
                 beginPlaySegment()
@@ -131,6 +137,7 @@ class MediaPlaybackService : MediaSessionService() {
         val mediaType = try {
             metadata.extras?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)?.let { MediaType.valueOf(it) }
         } catch (e: Exception) { null } ?: MediaType.AUDIOBOOKS
+        currentSessionItemType = mediaType
         pendingFinish = MediaMeta(
             id = mediaId,
             playlistId = metadata.albumTitle?.toString() ?: "",
@@ -140,10 +147,11 @@ class MediaPlaybackService : MediaSessionService() {
         )
     }
 
-    /** History only counts items that finished playing to their natural end. */
+    /** History only counts music items that finished playing to their natural end. */
     private fun finishPendingItem() {
         val meta = pendingFinish ?: return
         pendingFinish = null
+        if (meta.mediaType != MediaType.MUSIC) return
         historyScope.launch {
             try {
                 historyRecorder.recordItemFinished(
@@ -210,7 +218,7 @@ class MediaPlaybackService : MediaSessionService() {
                 .add(Player.COMMAND_SEEK_BACK)
                 .add(SessionCommand(PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY, Bundle.EMPTY))
                 .add(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY))
-                .add(SessionCommand(PlaybackContract.COMMAND_TOGGLE_SHUFFLE, Bundle.EMPTY))
+                .add(SessionCommand(PlaybackContract.COMMAND_SHUFFLE_MUSIC, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -277,7 +285,7 @@ class MediaPlaybackService : MediaSessionService() {
                     }
                 }
                 PlaybackContract.COMMAND_RESUME_LAST_QUEUE -> resumeLastQueue()
-                PlaybackContract.COMMAND_TOGGLE_SHUFFLE -> toggleQueueShuffle()
+                PlaybackContract.COMMAND_SHUFFLE_MUSIC -> shuffleAllMusic()
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -344,38 +352,29 @@ class MediaPlaybackService : MediaSessionService() {
             }
         }
 
-        private fun toggleQueueShuffle() {
-            val queueId = activeQueueId ?: return
-            if (exoPlayer.mediaItemCount == 0 || activeEntitiesById.isEmpty()) return
-
-            val newShuffle = !activeQueueShuffle
-            val currentIndex = exoPlayer.currentMediaItemIndex.coerceAtLeast(0)
-            val position = exoPlayer.currentPosition.coerceAtLeast(0L)
-            val currentId = exoPlayer.currentMediaItem?.mediaId
-
-            val newOrder = if (newShuffle) {
-                val shuffled = activeQueueIds.shuffled().toMutableList()
-                // Keep the playing track at its index so playback continues seamlessly.
-                if (currentId != null && shuffled.remove(currentId)) {
-                    shuffled.add(currentIndex.coerceIn(0, shuffled.size), currentId)
+        /** Builds a fresh shuffled queue from all music tracks and starts a random one. */
+        private fun shuffleAllMusic() {
+            serviceScope.launch {
+                val db = AppDatabase.getInstance(applicationContext)
+                val items = withContext(Dispatchers.IO) {
+                    db.mediaItemDao().getItemsByPlaylistId(PlaybackContract.MUSIC_QUEUE_ID)
                 }
-                shuffled.toList()
-            } else {
-                activeQueueIds
-                    .mapNotNull { activeEntitiesById[it] }
-                    .sortedBy { it.trackNumber }
-                    .map { it.id }
+                if (items.isEmpty()) {
+                    Log.w(TAG, "SHUFFLE_MUSIC: no music items found")
+                    return@launch
+                }
+                val shuffled = items.shuffled()
+                applyQueue(
+                    QueueLoad(
+                        queueId = PlaybackContract.MUSIC_QUEUE_ID,
+                        mediaType = MediaType.MUSIC,
+                        items = shuffled,
+                        startIndex = Random.nextInt(shuffled.size),
+                        startPositionMs = 0L,
+                        shuffle = true
+                    )
+                )
             }
-
-            val newEntities = newOrder.mapNotNull { activeEntitiesById[it] }
-            if (newEntities.isEmpty()) return
-            val newIndex = if (currentId != null) newOrder.indexOf(currentId).coerceAtLeast(0) else 0
-
-            activeQueueIds = newOrder
-            activeQueueShuffle = newShuffle
-            setPlayerItems(queueId, newEntities, newIndex, position)
-            persistCurrentQueue()
-            Log.i(TAG, "Queue shuffle toggled to $newShuffle for $queueId")
         }
     }
 
@@ -560,7 +559,7 @@ class MediaPlaybackService : MediaSessionService() {
         val itemId = currentSessionItemId
         val accrued = totalAccruedMs()
         playingSegmentStartElapsed = 0L
-        if (itemId == null) {
+        if (itemId == null || currentSessionItemType != MediaType.MUSIC) {
             pendingPlayTimeMs = 0L
             return
         }
@@ -578,6 +577,7 @@ class MediaPlaybackService : MediaSessionService() {
      */
     private fun periodicHistoryFlush() {
         val itemId = currentSessionItemId ?: return
+        if (currentSessionItemType != MediaType.MUSIC) return
         if (playingSegmentStartElapsed == 0L) return
         val accrued = totalAccruedMs()
         if (accrued >= HISTORY_FLUSH_INTERVAL_MS) {
@@ -602,6 +602,9 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         historyRecorder = PlayHistoryRecorder(AppDatabase.getInstance(applicationContext))
+        historyScope.launch {
+            runCatching { AppDatabase.getInstance(applicationContext).playHistoryDao().deleteNonMusic() }
+        }
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
         exoPlayer = ExoPlayer.Builder(this).setAudioAttributes(audioAttributes, true).build()

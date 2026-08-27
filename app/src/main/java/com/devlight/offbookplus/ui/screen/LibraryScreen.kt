@@ -1,7 +1,12 @@
 package com.devlight.offbookplus.ui.screen
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -9,8 +14,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.MaterialTheme
@@ -39,6 +46,17 @@ fun LibraryScreen(
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
+        }
+        if (mediaType == MediaType.MUSIC) {
+            item {
+                Card(onClick = { playbackViewModel.shuffleAllMusic() }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Shuffle All", style = MaterialTheme.typography.titleSmall)
+                    }
+                }
+            }
         }
         if (mediaItems.isEmpty()) {
             item {
@@ -84,7 +102,7 @@ private fun MediaItemCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
-        } else if (progress != null && progress.playbackPositionMs > 0) {
+        } else if (item.mediaType == MediaType.AUDIOBOOKS && progress != null && progress.playbackPositionMs > 0) {
             Text(
                 text = "Played ${formatTime(progress.playbackPositionMs)} · ${relativeTime(progress.lastUpdatedTimestamp)}",
                 style = MaterialTheme.typography.labelSmall,

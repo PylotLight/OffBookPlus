@@ -8,6 +8,7 @@ import android.os.Environment
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import com.devlight.offbookplus.model.MediaType
+import com.devlight.offbookplus.playback.PlaybackContract
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
@@ -64,7 +65,7 @@ class LocalFileScanner(private val context: Context) {
                 val fileUri = Uri.fromFile(file).toString()
 
                 val playlistId = if (mediaType == MediaType.MUSIC) {
-                    "all_music_tracks"
+                    PlaybackContract.MUSIC_QUEUE_ID
                 } else {
                     (file.parentFile?.name ?: "unknown_album").replace("\\s".toRegex(), "_").lowercase()
                 }

@@ -26,7 +26,6 @@ data class PlaybackState(
     @Player.State val playbackState: Int = Player.STATE_IDLE,
     val isPreviousChapterAvailable: Boolean = false,
     val isNextChapterAvailable: Boolean = false,
-    val isShuffleEnabled: Boolean = false,
     val playbackSpeed: Float = 1.0f
 ) {
     /** Helper property to calculate the progress for the UI (0.0f to 1.0f) */

@@ -119,7 +119,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             trackCount = player.mediaItemCount,
             isPreviousChapterAvailable = player.hasPreviousMediaItem(),
             isNextChapterAvailable = player.hasNextMediaItem(),
-            isShuffleEnabled = extras?.getBoolean(PlaybackContract.EXTRA_SHUFFLE_ENABLED, false) ?: false,
             playbackSpeed = player.playbackParameters.speed
         )
     }
@@ -216,14 +215,14 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         mediaController?.play()
     }
 
-    /** Shuffle order is owned by the service (persisted in playback_queue). */
-    fun toggleShuffle() {
+    /** Builds a fresh shuffled queue from all music tracks and starts a random one. */
+    fun shuffleAllMusic() {
         viewModelScope.launch {
             try {
                 val player = mediaControllerFuture.await()
-                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_TOGGLE_SHUFFLE, Bundle.EMPTY), Bundle.EMPTY)
+                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_SHUFFLE_MUSIC, Bundle.EMPTY), Bundle.EMPTY)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to toggle shuffle", e)
+                Log.e(TAG, "Failed to send shuffle-all-music command", e)
             }
         }
     }

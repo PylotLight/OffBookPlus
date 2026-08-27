@@ -23,4 +23,7 @@ interface PlayHistoryDao {
 
     @Query("DELETE FROM play_history")
     suspend fun clearAll()
+
+    @Query("DELETE FROM play_history WHERE mediaType != 'MUSIC'")
+    suspend fun deleteNonMusic()
 }

@@ -28,7 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Replay30
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.runtime.Composable
@@ -66,7 +65,6 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import com.google.android.horologist.annotations.ExperimentalHorologistApi
 import com.google.android.horologist.media.ui.components.PlayPauseButton
-import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 import java.text.DecimalFormat
 import java.util.concurrent.TimeUnit
@@ -304,36 +302,6 @@ fun PlayerScreen(
                     enabled = state.isNextChapterAvailable
                 ) {
                     viewModel.skipToNextChapter()
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircleIconButton(
-                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = "Volume"
-                ) {
-                    volumePanelOpen = if (volumePanelOpen > 0.5f) 0f else 1f
-                }
-
-                if (state.mediaType == MediaType.MUSIC) {
-                    Spacer(modifier = Modifier.width(10.dp))
-                    CircleIconButton(
-                        imageVector = Icons.Filled.Shuffle,
-                        contentDescription = "Toggle Shuffle",
-                        tint = if (state.isShuffleEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    ) {
-                        viewModel.toggleShuffle()
-                    }
                 }
             }
         }
