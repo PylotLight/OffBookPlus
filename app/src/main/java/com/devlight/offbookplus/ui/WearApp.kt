@@ -79,7 +79,8 @@ fun WearApp() {
                     mediaId = mediaId,
                     mediaType = mediaType,
                     onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    viewModel = playbackViewModel
                 )
             }
             composable(route = NavRoutes.SPEED_CONTROL_ROUTE) {
