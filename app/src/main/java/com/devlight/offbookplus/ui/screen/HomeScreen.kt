@@ -10,6 +10,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -27,9 +29,9 @@ import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 @Composable
 fun HomeScreen(
     onNavigate: (String) -> Unit,
-    playbackViewModel: PlaybackViewModel,
-    onOpenNowPlaying: () -> Unit
+    playbackViewModel: PlaybackViewModel
 ) {
+
     val items = listOf(
         SelectorItem(MediaType.AUDIOBOOKS.title, NavRoutes.LIBRARY_ROUTE_TEMPLATE, Icons.AutoMirrored.Filled.LibraryBooks, MediaType.AUDIOBOOKS),
         SelectorItem(MediaType.PODCASTS.title, NavRoutes.LIBRARY_ROUTE_TEMPLATE, Icons.Default.Podcasts, MediaType.PODCASTS),
@@ -43,12 +45,6 @@ fun HomeScreen(
             .padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        item {
-            NowPlayingBar(
-                playbackViewModel = playbackViewModel,
-                onOpenNowPlaying = onOpenNowPlaying
-            )
-        }
         item {
             Text(
                 "Select Collection",

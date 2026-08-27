@@ -20,6 +20,7 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val currentChapterTitle: String = "Loading...",
     val currentChapterIndex: Int = 0,
+    val trackCount: Int = 0,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 1L,
     @Player.State val playbackState: Int = Player.STATE_IDLE,

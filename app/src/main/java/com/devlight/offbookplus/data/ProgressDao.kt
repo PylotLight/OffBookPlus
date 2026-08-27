@@ -39,4 +39,10 @@ interface ProgressDao {
      */
     @Query("SELECT * FROM playback_progress ORDER BY lastUpdatedTimestamp DESC")
     fun getAllProgress(): Flow<List<PlaybackProgressEntity>>
+
+    /**
+     * One-shot variant of [getAllProgress] for use outside of Flow collectors.
+     */
+    @Query("SELECT * FROM playback_progress ORDER BY lastUpdatedTimestamp DESC")
+    suspend fun getAllProgressOnce(): List<PlaybackProgressEntity>
 }

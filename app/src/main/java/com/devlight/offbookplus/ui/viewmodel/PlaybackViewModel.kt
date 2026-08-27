@@ -21,31 +21,54 @@ import com.devlight.offbookplus.playback.MediaPlaybackService
 import com.devlight.offbookplus.playback.PlaybackContract
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val TAG = "PlaybackViewModel"
+
+data class LastQueueInfo(
+    val queueId: String,
+    val mediaType: MediaType
+) {
+    val displayTitle: String
+        get() = if (queueId == "all_music_tracks") "Music" else queueId.replace('_', ' ')
+}
+
 class PlaybackViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val PREFS_NAME = "PlaybackPrefs"
         const val KEY_SPEED_PREFIX = "playback_speed_"
-        const val DEFAULT_SPEED = 1.0f
+        const val KEY_REWIND_MS = "rewind_ms"
+        const val KEY_FORWARD_MS = "forward_ms"
+        const val DEFAULT_REWIND_MS = 15_000L
+        const val DEFAULT_FORWARD_MS = 30_000L
     }
+
     private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
     private var mediaControllerFuture: ListenableFuture<MediaController>
-    private val mediaItemDao = AppDatabase.getInstance(application).mediaItemDao()
     private val mediaController: MediaController?
         get() = if (mediaControllerFuture.isDone) mediaControllerFuture.get() else null
 
     private var progressUpdateJob: Job? = null
     private val controllerListener = MediaControllerListener()
+
+    private val _rewindMs = MutableStateFlow(prefs.getLong(KEY_REWIND_MS, DEFAULT_REWIND_MS))
+    val rewindMs: StateFlow<Long> = _rewindMs.asStateFlow()
+    private val _forwardMs = MutableStateFlow(prefs.getLong(KEY_FORWARD_MS, DEFAULT_FORWARD_MS))
+    val forwardMs: StateFlow<Long> = _forwardMs.asStateFlow()
+
+    private val _lastQueue = MutableStateFlow<LastQueueInfo?>(null)
+    val lastQueue: StateFlow<LastQueueInfo?> = _lastQueue.asStateFlow()
 
     init {
         val sessionToken = SessionToken(application, ComponentName(application,
@@ -56,6 +79,16 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             updateStateFromController()
         }, MoreExecutors.directExecutor())
         startProgressUpdate()
+        loadLastQueue()
+    }
+
+    private fun loadLastQueue() {
+        viewModelScope.launch {
+            val queue = withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(getApplication()).playbackQueueDao().getMostRecent()
+            }
+            _lastQueue.value = queue?.let { LastQueueInfo(it.queueId, it.mediaType) }
+        }
     }
 
     private inner class MediaControllerListener : Player.Listener {
@@ -63,13 +96,14 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             updateStateFromController()
         }
     }
+
     private fun updateStateFromController() {
         val player = mediaController ?: return
         val isFinished = player.playbackState == Player.STATE_ENDED
         val currentMediaItem = player.currentMediaItem
+        val extras = currentMediaItem?.mediaMetadata?.extras
         val currentMediaType = try {
-            currentMediaItem?.mediaMetadata?.extras?.getString("MEDIA_TYPE")
-                ?.let { MediaType.valueOf(it) }
+            extras?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)?.let { MediaType.valueOf(it) }
         } catch (e: Exception) { null }
 
         _playbackState.value = _playbackState.value.copy(
@@ -81,9 +115,11 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             bookId = currentMediaItem?.mediaMetadata?.albumTitle?.toString() ?: "",
             mediaId = currentMediaItem?.mediaId ?: "",
             mediaType = currentMediaType ?: MediaType.AUDIOBOOKS,
+            currentChapterIndex = player.currentMediaItemIndex.coerceAtLeast(0),
+            trackCount = player.mediaItemCount,
             isPreviousChapterAvailable = player.hasPreviousMediaItem(),
             isNextChapterAvailable = player.hasNextMediaItem(),
-            isShuffleEnabled = player.shuffleModeEnabled,
+            isShuffleEnabled = extras?.getBoolean(PlaybackContract.EXTRA_SHUFFLE_ENABLED, false) ?: false,
             playbackSpeed = player.playbackParameters.speed
         )
     }
@@ -99,50 +135,59 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    /**
-     * The single, intelligent function to handle all playback requests.
-     */
-    suspend fun playMediaItem(bookId: String, mediaType: MediaType) {
-        try {
-            val player = mediaControllerFuture.await()
-            if (player.currentMediaItem?.mediaId == bookId) {
-                Log.d(TAG, "Requested media ID '$bookId' is already the current item. No action taken.")
-                return
-            }
 
-            Log.i(TAG, "New media item requested. Sending command to play '$bookId' of type '$mediaType'.")
-            val command = SessionCommand(PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY, Bundle.EMPTY)
-            val args = Bundle().apply {
-                putString(PlaybackContract.KEY_MEDIA_ID, bookId)
-                putString(PlaybackContract.KEY_MEDIA_TYPE, mediaType.name)
+    /**
+     * Requests playback of a specific item. The service decides whether to seek inside the
+     * active queue, restore a persisted queue for that playlist, or build a fresh one.
+     */
+    fun playMediaItem(bookId: String, mediaType: MediaType) {
+        viewModelScope.launch {
+            try {
+                val player = mediaControllerFuture.await()
+                if (player.currentMediaItem?.mediaId == bookId) {
+                    Log.d(TAG, "Requested media ID '$bookId' is already the current item. No action taken.")
+                    return@launch
+                }
+                Log.i(TAG, "Requesting playback of '$bookId' of type '$mediaType'.")
+                val command = SessionCommand(PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY, Bundle.EMPTY)
+                val args = Bundle().apply {
+                    putString(PlaybackContract.KEY_MEDIA_ID, bookId)
+                    putString(PlaybackContract.KEY_MEDIA_TYPE, mediaType.name)
+                }
+                player.sendCustomCommand(command, args)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send playMediaItem command", e)
             }
-            player.sendCustomCommand(command, args)
-            val savedSpeed = loadPlaybackSpeed(mediaType)
-            if (player.playbackParameters.speed != savedSpeed) {
-                player.setPlaybackParameters(PlaybackParameters(savedSpeed))
-                updateStateFromController()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to send playMediaItem command", e)
         }
     }
+
+    /** Resumes the most recently persisted queue (order, track and position). */
+    fun resumeLastQueue() {
+        viewModelScope.launch {
+            try {
+                val player = mediaControllerFuture.await()
+                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY), Bundle.EMPTY)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to resume last queue", e)
+            }
+        }
+    }
+
     /**
-     * Fix 1: Saves the new speed to SharedPreferences and applies it to the player.
+     * Saves the new speed to SharedPreferences and applies it to the player.
      * The speed is saved per MediaType.
      */
     fun setPlaybackSpeed(speed: Float) {
         val mediaType = try {
-            mediaController?.currentMediaItem?.mediaMetadata?.extras?.getString("MEDIA_TYPE")?.let { MediaType.valueOf(it) }
+            mediaController?.currentMediaItem?.mediaMetadata?.extras
+                ?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)?.let { MediaType.valueOf(it) }
         } catch (e: Exception) { null }
 
         if (mediaController?.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH) == true) {
-            val params = PlaybackParameters(speed)
-            mediaController?.setPlaybackParameters(params)
+            mediaController?.setPlaybackParameters(PlaybackParameters(speed))
             Log.d(TAG, "Setting playback speed to $speed")
-
-            // Save the speed per media type
             if (mediaType != null) {
-                savePlaybackSpeed(mediaType, speed)
+                prefs.edit { putFloat(KEY_SPEED_PREFIX + mediaType.name, speed) }
                 Log.d(TAG, "Saved speed $speed for ${mediaType.name}")
             }
         } else {
@@ -152,28 +197,35 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     fun play() { mediaController?.play() }
     fun pause() { mediaController?.pause() }
-    private fun savePlaybackSpeed(mediaType: MediaType, speed: Float) {
-        prefs.edit {
-            putFloat(KEY_SPEED_PREFIX + mediaType.name, speed)
-        }
-    }
 
-    private fun loadPlaybackSpeed(mediaType: MediaType): Float {
-        // Load the saved speed for this media type, defaulting to 1.0f
-        return prefs.getFloat(KEY_SPEED_PREFIX + mediaType.name, DEFAULT_SPEED)
-    }
     fun seekToPosition(positionMs: Long) { mediaController?.seekTo(positionMs) }
+
+    fun seekBy(deltaMs: Long) {
+        val player = mediaController ?: return
+        val duration = player.duration
+        val target = if (duration > 0) {
+            (player.currentPosition + deltaMs).coerceIn(0L, duration)
+        } else {
+            (player.currentPosition + deltaMs).coerceAtLeast(0L)
+        }
+        player.seekTo(target)
+    }
 
     fun replay() {
         mediaController?.seekTo(0)
         mediaController?.play()
     }
 
+    /** Shuffle order is owned by the service (persisted in playback_queue). */
     fun toggleShuffle() {
-        val newShuffleState = !(mediaController?.shuffleModeEnabled ?: false)
-        mediaController?.shuffleModeEnabled = newShuffleState
-        updateStateFromController()
-        Log.d(TAG, "Shuffle toggled to $newShuffleState")
+        viewModelScope.launch {
+            try {
+                val player = mediaControllerFuture.await()
+                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_TOGGLE_SHUFFLE, Bundle.EMPTY), Bundle.EMPTY)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to toggle shuffle", e)
+            }
+        }
     }
 
     fun skipToNextChapter() {
@@ -186,6 +238,25 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         } else {
             mediaController?.seekToPreviousMediaItem()
         }
+    }
+
+    fun cycleRewindInterval() {
+        val next = nextInterval(_rewindMs.value)
+        prefs.edit { putLong(KEY_REWIND_MS, next) }
+        _rewindMs.value = next
+    }
+
+    fun cycleForwardInterval() {
+        val next = nextInterval(_forwardMs.value)
+        prefs.edit { putLong(KEY_FORWARD_MS, next) }
+        _forwardMs.value = next
+    }
+
+    private fun nextInterval(current: Long): Long = when (current) {
+        15_000L -> 30_000L
+        30_000L -> 45_000L
+        45_000L -> 60_000L
+        else -> 15_000L
     }
 
     override fun onCleared() {

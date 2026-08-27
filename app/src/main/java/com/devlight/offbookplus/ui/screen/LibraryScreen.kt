@@ -8,15 +8,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.MaterialTheme
+import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun LibraryScreen(
@@ -26,20 +29,14 @@ fun LibraryScreen(
     playbackViewModel: PlaybackViewModel
 ) {
     val mediaItems by libraryViewModel.uiState.collectAsState()
+    val progressByPlaylist by libraryViewModel.progressByPlaylist.collectAsState()
+    val playbackState by playbackViewModel.playbackState.collectAsState()
 
     LaunchedEffect(mediaType) {
         libraryViewModel.checkAndLoadMedia(mediaType)
     }
 
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            NowPlayingBar(
-                playbackViewModel = playbackViewModel,
-                onOpenNowPlaying = {
-                    onItemClick(playbackViewModel.playbackState.value.mediaId, playbackViewModel.playbackState.value.mediaType)
-                }
-            )
-        }
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
         }
@@ -51,22 +48,72 @@ fun LibraryScreen(
             }
         } else {
             items(mediaItems) { item ->
-                // Single source of truth for playback is PlayerScreen's
-                // LaunchedEffect; firing playMediaItem here as well caused
-                // double COMMAND_LOAD_MEDIA_AND_PLAY and raced with the
-                // still-loading playlist (first-item wrong-track bug).
-                MediaItemCard(item = item, onClick = {
-                    onItemClick(item.id, item.mediaType)
-                })
+                // Music shares one queue across all tracks, so per-card progress only
+                // makes sense for audiobooks/podcasts (one playlist per folder).
+                val progress = if (item.mediaType == MediaType.MUSIC) {
+                    null
+                } else {
+                    progressByPlaylist[item.playlistId]
+                }
+                MediaItemCard(
+                    item = item,
+                    isCurrent = playbackState.mediaId == item.id,
+                    isPlaying = playbackState.isPlaying,
+                    progress = progress,
+                    onClick = { onItemClick(item.id, item.mediaType) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MediaItemCard(item: MediaItem, onClick: () -> Unit) {
+private fun MediaItemCard(
+    item: MediaItem,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    progress: PlaybackProgressEntity?,
+    onClick: () -> Unit
+) {
     Card(onClick = onClick) {
-        Text(item.title, style = MaterialTheme.typography.titleSmall)
-        Text(item.author, style = MaterialTheme.typography.bodySmall)
+        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(item.author, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (isCurrent) {
+            Text(
+                text = if (isPlaying) "Now playing" else "Paused",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        } else if (progress != null && progress.playbackPositionMs > 0) {
+            Text(
+                text = "Played ${formatTime(progress.playbackPositionMs)} · ${relativeTime(progress.lastUpdatedTimestamp)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+private fun formatTime(ms: Long): String {
+    if (ms < 0) return "00:00"
+    val totalSeconds = TimeUnit.MILLISECONDS.toSeconds(ms)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds) else String.format(
+        "%02d:%02d",
+        minutes,
+        seconds
+    )
+}
+
+private fun relativeTime(timestampMs: Long): String {
+    val diff = System.currentTimeMillis() - timestampMs
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 60 * 24 -> "${minutes / 60}h ago"
+        else -> "${minutes / (60 * 24)}d ago"
     }
 }

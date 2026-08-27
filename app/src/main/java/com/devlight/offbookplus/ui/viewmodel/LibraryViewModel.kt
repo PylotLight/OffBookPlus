@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.devlight.offbookplus.data.AppDatabase
 import com.devlight.offbookplus.data.GitHubRelease
 import com.devlight.offbookplus.data.LocalFileScanner
+import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.data.UpdateDownloader
 import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.File
@@ -52,6 +54,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var downloadJob: Job? = null
     private val _uiState = MutableStateFlow<List<MediaItem>>(emptyList())
     val uiState: StateFlow<List<MediaItem>> = _uiState.asStateFlow()
+    private val _progressByPlaylist = MutableStateFlow<Map<String, PlaybackProgressEntity>>(emptyMap())
+    val progressByPlaylist: StateFlow<Map<String, PlaybackProgressEntity>> = _progressByPlaylist.asStateFlow()
     private val _downloadUrl = MutableStateFlow<String?>(null)
 //    val downloadUrl: StateFlow<String?> = _downloadUrl.asStateFlow()
 
@@ -60,6 +64,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _downloadProgress = MutableStateFlow(0)
     val downloadProgress: StateFlow<Int> = _downloadProgress.asStateFlow()
     private val mediaItemDao = AppDatabase.getInstance(application).mediaItemDao()
+    private val progressDao = AppDatabase.getInstance(application).progressDao()
+    private val queueDao = AppDatabase.getInstance(application).playbackQueueDao()
     private val prefs: SharedPreferences =
         application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _currentMediaType = MutableStateFlow(MediaType.AUDIOBOOKS)
@@ -260,6 +266,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val newItems = scanner.performDeepScanFor(mediaType)
                 mediaItemDao.deleteByMediaType(mediaType.name)
                 mediaItemDao.insertAll(newItems)
+                pruneQueuesForType(mediaType, newItems.map { it.id }.toSet())
                 prefs.edit {
                     putInt(
                         KEY_PREFIX_FILE_COUNT + mediaType.name,
@@ -279,13 +286,38 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadMedia(mediaType: MediaType) {
         viewModelScope.launch {
-            val itemsFromDb = withContext(Dispatchers.IO) {
-                mediaItemDao.getItemsByMediaType(mediaType.name)
+            val (itemsFromDb, progressList) = withContext(Dispatchers.IO) {
+                mediaItemDao.getItemsByMediaType(mediaType.name) to progressDao.getAllProgressOnce()
             }
             _uiState.value = itemsFromDb.map {
                 MediaItem(it.id, it.playlistId, it.mediaType, it.title, it.artist, it.fileUri)
             }
+            _progressByPlaylist.value = progressList.associateBy { it.playlistId }
             Log.d(TAG, "Loaded ${uiState.value.size} items for '${mediaType.name}' from DB.")
+        }
+    }
+
+    /**
+     * Drops queue entries for files that disappeared in a rescan and clamps indices,
+     * so a restored queue never points at stale media ids.
+     */
+    private suspend fun pruneQueuesForType(mediaType: MediaType, validIds: Set<String>) {
+        queueDao.getAllForType(mediaType.name).forEach { queue ->
+            val ids = runCatching { json.decodeFromString<List<String>>(queue.orderedIds) }.getOrNull()
+            if (ids == null) {
+                queueDao.delete(queue.queueId)
+                return@forEach
+            }
+            val pruned = ids.filter { it in validIds }
+            when {
+                pruned.isEmpty() -> queueDao.delete(queue.queueId)
+                pruned.size != ids.size -> queueDao.save(
+                    queue.copy(
+                        orderedIds = json.encodeToString(pruned),
+                        currentIndex = queue.currentIndex.coerceIn(0, pruned.size - 1)
+                    )
+                )
+            }
         }
     }
 
