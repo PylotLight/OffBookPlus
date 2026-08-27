@@ -181,6 +181,7 @@ spec:
                   await_device && {
                     echo "== capturing screenshot from $target"
                     adb -s "$target" shell input keyevent KEYCODE_WAKEUP || true
+                    sleep 1
                     if [ -n "$LAUNCH_AFTER_INSTALL" ]; then
                       adb -s "$target" shell am start -n "$APP_ID/$MAIN_ACTIVITY" >/dev/null 2>&1 || true
                       sleep 3

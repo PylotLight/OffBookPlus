@@ -52,11 +52,21 @@ save_watch_port() {
     info "remembered port $p"
 }
 
+preflight_watch_warning() {
+    # Give the user a moment to wake the watch — addresses "watch was off,
+    # need warning before that anytime". Skipped when TEST_SH_QUIET=1.
+    if [ "${TEST_SH_QUIET:-0}" != "1" ]; then
+        warn "about to contact watch at ${WATCH_IP}:${WATCH_PORT:-<auto>} — please ensure screen is ON (tap crown) — continuing in 3s (TEST_SH_QUIET=1 to skip)"
+        sleep 3
+    fi
+}
+
 # Run deploy.sh with the preset defaults. Falls back to port auto-discovery
 # once if a remembered port no longer works (e.g. after a watch reboot).
 # Discovered ports are saved even when the action itself fails.
 run_deploy() {
     need_watch_ip
+    preflight_watch_warning
     local rc=0
     if [ -n "${WATCH_PORT:-}" ]; then
         "$SCRIPT_DIR/deploy.sh" --ip "$WATCH_IP" --port "$WATCH_PORT" "$@" || rc=$?

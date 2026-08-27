@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -18,7 +17,6 @@ import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
-import kotlinx.coroutines.launch
 
 @Composable
 fun LibraryScreen(
@@ -28,7 +26,6 @@ fun LibraryScreen(
     playbackViewModel: PlaybackViewModel
 ) {
     val mediaItems by libraryViewModel.uiState.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(mediaType) {
         libraryViewModel.checkAndLoadMedia(mediaType)
@@ -54,10 +51,11 @@ fun LibraryScreen(
             }
         } else {
             items(mediaItems) { item ->
+                // Single source of truth for playback is PlayerScreen's
+                // LaunchedEffect; firing playMediaItem here as well caused
+                // double COMMAND_LOAD_MEDIA_AND_PLAY and raced with the
+                // still-loading playlist (first-item wrong-track bug).
                 MediaItemCard(item = item, onClick = {
-                    coroutineScope.launch {
-                        playbackViewModel.playMediaItem(item.id, item.mediaType)
-                    }
                     onItemClick(item.id, item.mediaType)
                 })
             }

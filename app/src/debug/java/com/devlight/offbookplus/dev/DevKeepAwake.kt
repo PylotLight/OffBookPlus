@@ -14,6 +14,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -56,6 +57,7 @@ class DevInitProvider : ContentProvider() {
 class DevKeepAwakeService : Service() {
 
     private var wifiLock: WifiManager.WifiLock? = null
+    private var powerLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -74,11 +76,19 @@ class DevKeepAwakeService : Service() {
                 setReferenceCounted(false)
                 acquire()
             }
+        powerLock = (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "offbook-dev-power")
+            .apply {
+                setReferenceCounted(false)
+                acquire()
+            }
     }
 
     override fun onDestroy() {
         wifiLock?.takeIf { it.isHeld }?.release()
         wifiLock = null
+        powerLock?.takeIf { it.isHeld }?.release()
+        powerLock = null
         super.onDestroy()
     }
 

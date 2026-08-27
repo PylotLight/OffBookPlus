@@ -258,13 +258,19 @@ class MediaPlaybackService : MediaSessionService() {
                 exoPlayer.stop()
                 exoPlayer.clearMediaItems()
                 
-                val actualTrackIndex = if (progress != null && (startIndex == progress.trackIndex || startIndex == 0)) {
+                // Fix: explicit tap wins. Only resume saved position when the tapped item
+                // is the same track that progress was saved for. The old
+                // `|| startIndex == 0` made every tap on the first card resume
+                // whatever track was last saved (wrong item, or OOB crash after
+                // rescan when playlist shrank).
+                val rawTrackIndex = if (progress != null && startIndex == progress.trackIndex) {
                     progress.trackIndex
                 } else {
                     startIndex
                 }
+                val actualTrackIndex = rawTrackIndex.coerceIn(0, (mediaItems.size - 1).coerceAtLeast(0))
                 val actualPosition = if (progress != null && actualTrackIndex == progress.trackIndex) {
-                    progress.playbackPositionMs
+                    progress.playbackPositionMs.coerceAtLeast(0L)
                 } else {
                     0L
                 }
