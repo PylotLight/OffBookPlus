@@ -236,11 +236,17 @@ class MediaPlaybackService : MediaSessionService() {
                     val db = AppDatabase.getInstance(applicationContext)
                     val allForType = db.mediaItemDao().getItemsByMediaType(mediaType.name)
                     Log.i(TAG, "lookup id=$bookId in ${allForType.size} items for $mediaType, firstId=${allForType.firstOrNull()?.id}")
-                    val selectedItemEntity = allForType.find { it.id == bookId }
+                    // DB ids are stored as Uri.fromFile().toString() which percent-encodes spaces as %20,
+                    // while the navigation round-trip via URLEncoder/URLDecoder yields a decoded form with spaces.
+                    // Compare after Uri decoding so both forms match.
+                    val decodedBookId = android.net.Uri.decode(bookId)
+                    val selectedItemEntity = allForType.find {
+                        it.id == bookId || android.net.Uri.decode(it.id) == decodedBookId || it.id == android.net.Uri.encode(bookId)
+                    }
                     if (selectedItemEntity == null) {
-                        Log.w(TAG, "selectedItemEntity null for id=$bookId type=$mediaType")
+                        Log.w(TAG, "selectedItemEntity null for id=$bookId decoded=$decodedBookId type=$mediaType")
                         // dump a few ids for debugging the mismatch
-                        allForType.take(3).forEach { Log.w(TAG, "candidate id=${it.id}") }
+                        allForType.take(3).forEach { Log.w(TAG, "candidate id=${it.id} decoded=${android.net.Uri.decode(it.id)}") }
                         return@withContext null
                     }
 
