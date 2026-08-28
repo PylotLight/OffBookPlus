@@ -50,7 +50,7 @@ fun LibraryScreen(
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
         }
-        if (mediaType == MediaType.MUSIC) {
+        if (mediaType == MediaType.MUSIC && mediaItems.isNotEmpty()) {
             item {
                 Chip(
                     onClick = {

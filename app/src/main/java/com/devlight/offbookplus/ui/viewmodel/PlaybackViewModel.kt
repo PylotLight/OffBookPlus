@@ -85,7 +85,14 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     private fun loadLastQueue() {
         viewModelScope.launch {
             val queue = withContext(Dispatchers.IO) {
-                AppDatabase.getInstance(getApplication()).playbackQueueDao().getMostRecent()
+                val q = AppDatabase.getInstance(getApplication()).playbackQueueDao().getMostRecent() ?: return@withContext null
+                val ids = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString<List<String>>(q.orderedIds)
+                }.getOrNull() ?: return@withContext null
+                if (ids.isEmpty()) return@withContext null
+                val existing = AppDatabase.getInstance(getApplication()).mediaItemDao().getItemsByIds(ids)
+                if (existing.isEmpty()) return@withContext null
+                q
             }
             _lastQueue.value = queue?.let { LastQueueInfo(it.queueId, it.mediaType) }
         }

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -29,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -64,9 +64,6 @@ fun WearApp(startAtPlayer: Boolean = false) {
         val playbackViewModel: PlaybackViewModel = viewModel()
         val updatesViewModel: UpdatesViewModel = viewModel()
 
-        // Pulling down past the top of any list drags the screen with the finger;
-        // releasing past the threshold slides open the player. The indicator pill at
-        // the top brightens while pulling to hint the gesture.
         val scope = rememberCoroutineScope()
         val screenHeightPx = with(LocalDensity.current) {
             val hDp = LocalConfiguration.current.screenHeightDp.dp
@@ -74,7 +71,7 @@ fun WearApp(startAtPlayer: Boolean = false) {
             if (px > 0f) px else 466f
         }
         val maxPullPx = screenHeightPx
-        val triggerPx = screenHeightPx * 0.35f
+        val triggerPx = screenHeightPx * 0.28f
         var pullPx by remember { mutableFloatStateOf(0f) }
         var fired by remember { mutableStateOf(false) }
         val overlayTranslationPx = (-screenHeightPx + pullPx).coerceIn(-screenHeightPx, 0f)
@@ -92,8 +89,27 @@ fun WearApp(startAtPlayer: Boolean = false) {
             else -> true
         }
 
-        val pullDownConnection = remember(currentRoute, maxPullPx, triggerPx, scope) {
+        val pullDownConnection = remember(currentRoute, maxPullPx, triggerPx, screenHeightPx, scope) {
             object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
+                        return Offset.Zero
+                    }
+                    if (source == NestedScrollSource.UserInput) {
+                        if (available.y > 0f) {
+                            val prev = pullPx
+                            pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
+                            fired = pullPx >= triggerPx
+                            if (pullPx != prev) return available
+                        } else if (available.y < 0f && pullPx > 0f) {
+                            val prev = pullPx
+                            pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
+                            fired = pullPx >= triggerPx
+                            if (pullPx != prev) return available
+                        }
+                    }
+                    return Offset.Zero
+                }
                 override fun onPostScroll(
                     consumed: Offset,
                     available: Offset,
@@ -106,6 +122,7 @@ fun WearApp(startAtPlayer: Boolean = false) {
                         if (available.y > 0f || (available.y < 0f && pullPx > 0f)) {
                             pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
                             fired = pullPx >= triggerPx
+                            if (available.y != 0f) return available
                         }
                     }
                     return Offset.Zero
@@ -131,7 +148,7 @@ fun WearApp(startAtPlayer: Boolean = false) {
                             animate(
                                 initialValue = start,
                                 targetValue = 0f,
-                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 380f)
+                                animationSpec = spring(dampingRatio = 0.85f, stiffness = 450f)
                             ) { v, _ -> pullPx = v }
                         }
                     }
@@ -170,8 +187,6 @@ fun WearApp(startAtPlayer: Boolean = false) {
                 LibraryScreen(
                     mediaType = mediaType,
                     onItemClick = { mediaId, mediaTypeForPlay ->
-                        // Playback is triggered here (single source of truth); the
-                        // player screen only displays/controls the active session.
                         playbackViewModel.playMediaItem(mediaId, mediaTypeForPlay)
                         navController.navigate(NavRoutes.PLAYER_ROUTE)
                     },
@@ -225,7 +240,9 @@ fun WearApp(startAtPlayer: Boolean = false) {
                                     fired = pullPx >= triggerPx
                                 },
                                 onDragEnd = {
-                                    if (fired) {
+                                    val release = fired
+                                    fired = false
+                                    if (release) {
                                         val start = pullPx
                                         scope.launch {
                                             animate(
@@ -236,17 +253,16 @@ fun WearApp(startAtPlayer: Boolean = false) {
                                             navController.navigate(NavRoutes.PLAYER_ROUTE)
                                             pullPx = 0f
                                         }
-                                    } else {
+                                    } else if (pullPx > 0f) {
                                         val start = pullPx
                                         scope.launch {
                                             animate(
                                                 initialValue = start,
                                                 targetValue = 0f,
-                                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 380f)
+                                                animationSpec = spring(dampingRatio = 0.85f, stiffness = 450f)
                                             ) { v, _ -> pullPx = v }
                                         }
                                     }
-                                    fired = false
                                 }
                             )
                         }
