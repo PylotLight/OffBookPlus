@@ -113,9 +113,8 @@ fun PlayerScreen(
                         colors = ChipDefaults.primaryChipColors(),
                         modifier = Modifier.fillMaxWidth(0.7f)
                     )
-                }
-                if (lastQueue != null) {
-                    Spacer(modifier = Modifier.height(if (hasMusic) 8.dp else 12.dp))
+                } else if (lastQueue != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     Chip(
                         onClick = { viewModel.resumeLastQueue() },
                         label = {
