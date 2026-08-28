@@ -65,8 +65,8 @@ fun WearApp(startAtPlayer: Boolean = false) {
         // releasing past the threshold slides open the player. The indicator pill at
         // the top brightens while pulling to hint the gesture.
         val scope = rememberCoroutineScope()
-        val maxPullPx = with(LocalDensity.current) { 48.dp.toPx() }
-        val triggerPx = maxPullPx * 0.75f
+        val maxPullPx = with(LocalDensity.current) { 64.dp.toPx() }
+        val triggerPx = maxPullPx * 0.65f
         var pullPx by remember { mutableFloatStateOf(0f) }
         var fired by remember { mutableStateOf(false) }
 
@@ -123,6 +123,21 @@ fun WearApp(startAtPlayer: Boolean = false) {
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
+            // Background player that peeks in as you pull down — so the drag
+            // immediately reveals the playback screen over the current content
+            // instead of just shifting the list and waiting for a fling.
+            if (pullPx > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    PlayerScreen(
+                        onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
+                        viewModel = playbackViewModel
+                    )
+                }
+            }
             Column(modifier = Modifier.fillMaxSize()) {
                 SwipeDismissableNavHost(
                     navController = navController,
