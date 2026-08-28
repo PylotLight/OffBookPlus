@@ -112,6 +112,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             durationMs = player.duration.coerceAtLeast(1L),
             playbackState = player.playbackState,
             currentChapterTitle = currentMediaItem?.mediaMetadata?.title?.toString() ?: "No Title",
+            currentChapterArtist = currentMediaItem?.mediaMetadata?.artist?.toString() ?: "",
             bookId = currentMediaItem?.mediaMetadata?.albumTitle?.toString() ?: "",
             mediaId = currentMediaItem?.mediaId ?: "",
             mediaType = currentMediaType ?: MediaType.AUDIOBOOKS,

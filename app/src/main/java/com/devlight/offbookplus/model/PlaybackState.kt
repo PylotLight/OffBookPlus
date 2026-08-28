@@ -19,6 +19,7 @@ data class PlaybackState(
     val mediaType: MediaType = MediaType.AUDIOBOOKS,
     val isPlaying: Boolean = false,
     val currentChapterTitle: String = "Loading...",
+    val currentChapterArtist: String = "",
     val currentChapterIndex: Int = 0,
     val trackCount: Int = 0,
     val currentPositionMs: Long = 0L,

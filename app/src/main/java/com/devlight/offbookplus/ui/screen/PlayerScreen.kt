@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -175,17 +176,34 @@ fun PlayerScreen(
             Text(
                 text = state.currentChapterTitle,
                 style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(0.72f)
+                modifier = Modifier.fillMaxWidth(0.74f)
             )
+            val artist = state.currentChapterArtist
+            val showArtist = artist.isNotBlank() &&
+                !artist.equals("Unknown Artist", ignoreCase = true) &&
+                !artist.equals("Music", ignoreCase = true) &&
+                artist != state.currentChapterTitle
+            if (showArtist) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = artist,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(0.72f)
+                )
+            }
         }
 
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp, start = 12.dp, end = 12.dp),
+                .padding(bottom = 22.dp, start = 12.dp, end = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -262,7 +280,7 @@ fun PlayerScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().offset(y = (-4).dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -279,7 +297,6 @@ fun PlayerScreen(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .offset(y = 4.dp)
                         .clip(RoundedCornerShape(percent = 50))
                         .background(MaterialTheme.colorScheme.surfaceContainer)
                         .clickable(enabled = state.isReady) {

@@ -73,15 +73,33 @@ spec:
                 fi
                 if [ -z "$port" ]; then
                   echo "== parallel TCP-connect sweep (5555 + 32000-61000)"
-                  port="$(
+                  candidates="$(
                     export ip="$WATCH_IP"
-                    { echo 5555; seq 32000 61000; } | xargs -P 20 -n 250 bash -c '
+                    { echo 5555; seq 32000 61000; } | xargs -P 40 -n 150 bash -c '
                       for p in "$@"; do
                         timeout 1 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null && echo "$p"
                       done
-                    ' _ 2>/dev/null | head -1
+                    ' _ 2>/dev/null | sort -n
                   )"
-                  [ -n "$port" ] && echo "== sweep hit: $port"
+                  verified=""
+                  for cand in $candidates; do
+                    adb connect "$WATCH_IP:$cand" >/dev/null 2>&1 || true
+                    sleep 0.5
+                    st="$(adb -s "$WATCH_IP:$cand" get-state 2>/dev/null || true)"
+                    if [ "$st" = "device" ]; then
+                      port="$cand"
+                      verified=1
+                      echo "== sweep hit: $port (verified device)"
+                      break
+                    else
+                      echo "== sweep candidate $cand open but not adb device (state=$st)"
+                      adb disconnect "$WATCH_IP:$cand" >/dev/null 2>&1 || true
+                    fi
+                  done
+                  if [ -z "$verified" ]; then
+                    echo "== sweep found open ports but none verified as adb device"
+                    port=""
+                  fi
                 fi
                 if [ -z "$port" ]; then
                   echo "== fallback: polite nmap sweep (up to ~2 min)"
