@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -69,6 +70,12 @@ fun WearApp(startAtPlayer: Boolean = false) {
         val triggerPx = maxPullPx * 0.65f
         var pullPx by remember { mutableFloatStateOf(0f) }
         var fired by remember { mutableStateOf(false) }
+        val screenHeightPx = with(LocalDensity.current) {
+            val hDp = LocalConfiguration.current.screenHeightDp.dp
+            val px = hDp.toPx()
+            if (px > 0f) px else 466f
+        }
+        val overlayTranslationPx = (-screenHeightPx + pullPx * (screenHeightPx / maxPullPx)).coerceIn(-screenHeightPx, 0f)
 
         var currentRoute by remember { mutableStateOf<String?>(null) }
         DisposableEffect(navController) {
@@ -83,13 +90,16 @@ fun WearApp(startAtPlayer: Boolean = false) {
             else -> true
         }
 
-        val pullDownConnection = remember(navController, maxPullPx, scope) {
+        val pullDownConnection = remember(currentRoute, maxPullPx, scope) {
             object : NestedScrollConnection {
                 override fun onPostScroll(
                     consumed: Offset,
                     available: Offset,
                     source: NestedScrollSource
                 ): Offset {
+                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
+                        return Offset.Zero
+                    }
                     if (source == NestedScrollSource.UserInput && !fired) {
                         if (available.y > 0f || (available.y < 0f && pullPx > 0f)) {
                             pullPx = (pullPx + available.y * 0.6f).coerceIn(0f, maxPullPx)
@@ -105,9 +115,17 @@ fun WearApp(startAtPlayer: Boolean = false) {
                     val release = fired
                     fired = false
                     if (release) {
-                        navController.navigate(NavRoutes.PLAYER_ROUTE)
-                    }
-                    if (pullPx > 0f) {
+                        val start = pullPx
+                        scope.launch {
+                            animate(
+                                initialValue = start,
+                                targetValue = maxPullPx,
+                                animationSpec = spring(dampingRatio = 0.85f, stiffness = 500f)
+                            ) { v, _ -> pullPx = v }
+                            navController.navigate(NavRoutes.PLAYER_ROUTE)
+                            pullPx = 0f
+                        }
+                    } else if (pullPx > 0f) {
                         val start = pullPx
                         scope.launch {
                             animate(
@@ -123,28 +141,12 @@ fun WearApp(startAtPlayer: Boolean = false) {
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            // Background player that peeks in as you pull down — so the drag
-            // immediately reveals the playback screen over the current content
-            // instead of just shifting the list and waiting for a fling.
-            if (pullPx > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                ) {
-                    PlayerScreen(
-                        onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
-                        viewModel = playbackViewModel
-                    )
-                }
-            }
             Column(modifier = Modifier.fillMaxSize()) {
                 SwipeDismissableNavHost(
                     navController = navController,
                     startDestination = NavRoutes.HOME_ROUTE,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { translationY = pullPx }
                         .background(MaterialTheme.colorScheme.background)
                         .nestedScroll(pullDownConnection)
                 ) {
@@ -203,6 +205,20 @@ fun WearApp(startAtPlayer: Boolean = false) {
             composable(route = NavRoutes.UPDATES_ROUTE) {
                 UpdatesScreen(viewModel = updatesViewModel)
             }
+                }
+            }
+
+            if (pullPx > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { translationY = overlayTranslationPx }
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    PlayerScreen(
+                        onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
+                        viewModel = playbackViewModel
+                    )
                 }
             }
 
