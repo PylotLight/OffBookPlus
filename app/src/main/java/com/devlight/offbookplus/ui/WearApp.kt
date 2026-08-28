@@ -95,18 +95,12 @@ fun WearApp(startAtPlayer: Boolean = false) {
                     if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
                         return Offset.Zero
                     }
-                    if (source == NestedScrollSource.UserInput) {
-                        if (available.y > 0f) {
-                            val prev = pullPx
-                            pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
-                            fired = pullPx >= triggerPx
-                            if (pullPx != prev) return available
-                        } else if (available.y < 0f && pullPx > 0f) {
-                            val prev = pullPx
-                            pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
-                            fired = pullPx >= triggerPx
-                            if (pullPx != prev) return available
-                        }
+                    if (source != NestedScrollSource.UserInput) return Offset.Zero
+                    if (available.y < 0f && pullPx > 0f) {
+                        val prev = pullPx
+                        pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
+                        fired = pullPx >= triggerPx
+                        if (pullPx != prev) return available
                     }
                     return Offset.Zero
                 }
@@ -118,12 +112,15 @@ fun WearApp(startAtPlayer: Boolean = false) {
                     if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
                         return Offset.Zero
                     }
-                    if (source == NestedScrollSource.UserInput) {
-                        if (available.y > 0f || (available.y < 0f && pullPx > 0f)) {
-                            pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
-                            fired = pullPx >= triggerPx
-                            if (available.y != 0f) return available
-                        }
+                    if (source != NestedScrollSource.UserInput) return Offset.Zero
+                    if (available.y > 0f) {
+                        pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
+                        fired = pullPx >= triggerPx
+                        if (available.y != 0f) return available
+                    } else if (available.y < 0f && pullPx > 0f && available.y != 0f) {
+                        pullPx = (pullPx + available.y).coerceIn(0f, maxPullPx)
+                        fired = pullPx >= triggerPx
+                        return available
                     }
                     return Offset.Zero
                 }
