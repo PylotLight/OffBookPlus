@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Replay30
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.runtime.Composable
@@ -93,6 +94,7 @@ fun PlayerScreen(
 
     if (state.mediaId.isBlank()) {
         val lastQueue by viewModel.lastQueue.collectAsState()
+        val hasMusic by viewModel.hasMusic.collectAsState()
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             TimeText()
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -102,8 +104,18 @@ fun PlayerScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 24.dp)
                 )
-                if (lastQueue != null) {
+                if (hasMusic) {
                     Spacer(modifier = Modifier.height(12.dp))
+                    Chip(
+                        onClick = { viewModel.shuffleAllMusic() },
+                        label = { Text("Shuffle All") },
+                        icon = { Icon(Icons.Filled.Shuffle, contentDescription = null) },
+                        colors = ChipDefaults.primaryChipColors(),
+                        modifier = Modifier.fillMaxWidth(0.7f)
+                    )
+                }
+                if (lastQueue != null) {
+                    Spacer(modifier = Modifier.height(if (hasMusic) 8.dp else 12.dp))
                     Chip(
                         onClick = { viewModel.resumeLastQueue() },
                         label = {

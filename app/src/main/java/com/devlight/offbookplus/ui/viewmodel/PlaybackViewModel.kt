@@ -69,6 +69,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     private val _lastQueue = MutableStateFlow<LastQueueInfo?>(null)
     val lastQueue: StateFlow<LastQueueInfo?> = _lastQueue.asStateFlow()
+    private val _hasMusic = MutableStateFlow(false)
+    val hasMusic: StateFlow<Boolean> = _hasMusic.asStateFlow()
 
     init {
         val sessionToken = SessionToken(application, ComponentName(application,
@@ -80,6 +82,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         }, MoreExecutors.directExecutor())
         startProgressUpdate()
         loadLastQueue()
+        refreshHasMusic()
     }
 
     private fun loadLastQueue() {
@@ -95,6 +98,15 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
                 q
             }
             _lastQueue.value = queue?.let { LastQueueInfo(it.queueId, it.mediaType) }
+        }
+    }
+
+    private fun refreshHasMusic() {
+        viewModelScope.launch {
+            val has = withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(getApplication()).mediaItemDao().getItemsByMediaType(MediaType.MUSIC.name).isNotEmpty()
+            }
+            _hasMusic.value = has
         }
     }
 
