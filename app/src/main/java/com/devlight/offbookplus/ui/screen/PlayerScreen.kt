@@ -83,11 +83,10 @@ private const val VOLUME_STEPS_PER_ROTARY_PX = 0.12f
 private val CornerButtonSize = 42.dp
 private val CornerIconSize = 20.dp
 private val CenterButtonSize = 54.dp
-private val SpeedSteps = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+private val SpeedSteps = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.25f, 2.5f, 2.75f, 3f)
 
 @Composable
 fun PlayerScreen(
-    onNavigateToSpeedControl: () -> Unit,
     viewModel: PlaybackViewModel = viewModel()
 ) {
     val state by viewModel.playbackState.collectAsState()

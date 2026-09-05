@@ -48,7 +48,6 @@ import com.devlight.offbookplus.ui.screen.HistoryScreen
 import com.devlight.offbookplus.ui.screen.LibraryScreen
 import com.devlight.offbookplus.ui.screen.PlayerScreen
 import com.devlight.offbookplus.ui.screen.SettingsScreen
-import com.devlight.offbookplus.ui.screen.SpeedControlScreen
 import com.devlight.offbookplus.ui.screen.UpdatesScreen
 import com.devlight.offbookplus.ui.theme.AudiobookAppTheme
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
@@ -85,14 +84,14 @@ fun WearApp(startAtPlayer: Boolean = false) {
             onDispose { navController.removeOnDestinationChangedListener(listener) }
         }
         val indicatorVisible = when (currentRoute) {
-            NavRoutes.PLAYER_ROUTE, NavRoutes.SPEED_CONTROL_ROUTE, NavRoutes.UPDATES_ROUTE -> false
+            NavRoutes.PLAYER_ROUTE, NavRoutes.UPDATES_ROUTE -> false
             else -> true
         }
 
         val pullDownConnection = remember(currentRoute, maxPullPx, triggerPx, screenHeightPx, scope) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
+                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
                         return Offset.Zero
                     }
                     if (source != NestedScrollSource.UserInput) return Offset.Zero
@@ -109,7 +108,7 @@ fun WearApp(startAtPlayer: Boolean = false) {
                     available: Offset,
                     source: NestedScrollSource
                 ): Offset {
-                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.SPEED_CONTROL_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
+                    if (currentRoute == NavRoutes.PLAYER_ROUTE || currentRoute == NavRoutes.UPDATES_ROUTE) {
                         return Offset.Zero
                     }
                     if (source != NestedScrollSource.UserInput) return Offset.Zero
@@ -195,12 +194,8 @@ fun WearApp(startAtPlayer: Boolean = false) {
 
             composable(route = NavRoutes.PLAYER_ROUTE) {
                 PlayerScreen(
-                    onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
                     viewModel = playbackViewModel
                 )
-            }
-            composable(route = NavRoutes.SPEED_CONTROL_ROUTE) {
-                SpeedControlScreen(viewModel = playbackViewModel)
             }
             composable(route = NavRoutes.SETTINGS_ROUTE) {
                 SettingsScreen(
@@ -265,7 +260,6 @@ fun WearApp(startAtPlayer: Boolean = false) {
                         }
                 ) {
                     PlayerScreen(
-                        onNavigateToSpeedControl = { navController.navigate(NavRoutes.SPEED_CONTROL_ROUTE) },
                         viewModel = playbackViewModel
                     )
                 }
@@ -303,7 +297,6 @@ object NavRoutes {
     const val HOME_ROUTE = "home"
     const val LIBRARY_ROUTE_TEMPLATE = "library/{mediaType}"
     const val PLAYER_ROUTE = "player"
-    const val SPEED_CONTROL_ROUTE = "speed_control"
     const val CHAPTERS_ROUTE = "chapters"
     const val SETTINGS_ROUTE = "settings"
     const val HISTORY_ROUTE = "history"
