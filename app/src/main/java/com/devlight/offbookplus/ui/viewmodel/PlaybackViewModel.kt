@@ -60,6 +60,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     private val _lastQueue = MutableStateFlow<LastQueueInfo?>(null)
     val lastQueue: StateFlow<LastQueueInfo?> = _lastQueue.asStateFlow()
+    private val _savedQueues = MutableStateFlow<List<LastQueueInfo>>(emptyList())
+    val savedQueues: StateFlow<List<LastQueueInfo>> = _savedQueues.asStateFlow()
     private val _hasMusic = MutableStateFlow(false)
     val hasMusic: StateFlow<Boolean> = _hasMusic.asStateFlow()
 
@@ -72,23 +74,27 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             updateStateFromController()
         }, MoreExecutors.directExecutor())
         startProgressUpdate()
-        loadLastQueue()
+        refreshSavedQueues()
         refreshHasMusic()
     }
 
-    private fun loadLastQueue() {
+    /** One restorable queue per library, most recently played first. */
+    fun refreshSavedQueues() {
         viewModelScope.launch {
-            val queue = withContext(Dispatchers.IO) {
-                val q = AppDatabase.getInstance(getApplication()).playbackQueueDao().getMostRecent() ?: return@withContext null
-                val ids = runCatching {
-                    kotlinx.serialization.json.Json.decodeFromString<List<String>>(q.orderedIds)
-                }.getOrNull() ?: return@withContext null
-                if (ids.isEmpty()) return@withContext null
-                val existing = AppDatabase.getInstance(getApplication()).mediaItemDao().getItemsByIds(ids)
-                if (existing.isEmpty()) return@withContext null
-                q
+            val rows = withContext(Dispatchers.IO) {
+                val db = AppDatabase.getInstance(getApplication())
+                db.playbackQueueDao().getAll().filter { row ->
+                    val ids = runCatching {
+                        kotlinx.serialization.json.Json.decodeFromString<List<String>>(row.orderedIds)
+                    }.getOrNull()
+                    !ids.isNullOrEmpty() && db.mediaItemDao().getItemsByIds(ids).isNotEmpty()
+                }
             }
-            _lastQueue.value = queue?.let { LastQueueInfo(it.queueId, it.mediaType) }
+            _lastQueue.value = rows.firstOrNull()?.let { LastQueueInfo(it.queueId, it.mediaType) }
+            _savedQueues.value = rows
+                .groupBy { it.mediaType }
+                .map { entry -> entry.value.first() }
+                .map { LastQueueInfo(it.queueId, it.mediaType) }
         }
     }
 
@@ -171,12 +177,20 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** Resumes the most recently persisted queue (order, track and position). */
-    fun resumeLastQueue() {
+    /**
+     * Resumes playback. Without a type, resumes whatever played last (playing wins over
+     * reloading). With a type, resumes that library's own saved queue — cutting over if
+     * another library is active — so e.g. music survives a podcast detour unchanged.
+     */
+    fun resumeLastQueue(mediaType: MediaType? = null) {
         viewModelScope.launch {
             try {
                 val player = mediaControllerFuture.await()
-                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY), Bundle.EMPTY)
+                val args = mediaType?.let {
+                    Bundle().apply { putString(PlaybackContract.KEY_MEDIA_TYPE, it.name) }
+                } ?: Bundle.EMPTY
+                player.sendCustomCommand(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY), args)
+                refreshSavedQueues()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to resume last queue", e)
             }

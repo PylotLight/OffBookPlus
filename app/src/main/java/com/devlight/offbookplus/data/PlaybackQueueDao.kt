@@ -17,6 +17,9 @@ interface PlaybackQueueDao {
     @Query("SELECT * FROM playback_queue ORDER BY lastUpdatedTimestamp DESC LIMIT 1")
     suspend fun getMostRecent(): PlaybackQueueEntity?
 
+    @Query("SELECT * FROM playback_queue ORDER BY lastUpdatedTimestamp DESC")
+    suspend fun getAll(): List<PlaybackQueueEntity>
+
     @Query("SELECT * FROM playback_queue WHERE mediaType = :mediaType ORDER BY lastUpdatedTimestamp DESC")
     suspend fun getAllForType(mediaType: String): List<PlaybackQueueEntity>
 

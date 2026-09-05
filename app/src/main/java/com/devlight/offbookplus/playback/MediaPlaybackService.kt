@@ -218,8 +218,7 @@ class MediaPlaybackService : MediaSessionService() {
                 .add(Player.COMMAND_SEEK_FORWARD)
                 .add(Player.COMMAND_SEEK_BACK)
                 .add(SessionCommand(PlaybackContract.COMMAND_LOAD_MEDIA_AND_PLAY, Bundle.EMPTY))
-                .add(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY))
-                .add(SessionCommand(PlaybackContract.COMMAND_SHUFFLE_MUSIC, Bundle.EMPTY))
+                .add(SessionCommand(PlaybackContract.COMMAND_RESUME_LAST_QUEUE, Bundle.EMPTY))                .add(SessionCommand(PlaybackContract.COMMAND_SHUFFLE_MUSIC, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -255,7 +254,7 @@ class MediaPlaybackService : MediaSessionService() {
                         Log.w(TAG, "LOAD_MEDIA_AND_PLAY: mediaId null, ignoring")
                     }
                 }
-                PlaybackContract.COMMAND_RESUME_LAST_QUEUE -> resumeLastQueue()
+                PlaybackContract.COMMAND_RESUME_LAST_QUEUE -> resumeLastQueue(args.getString(PlaybackContract.KEY_MEDIA_TYPE))
                 PlaybackContract.COMMAND_SHUFFLE_MUSIC -> shuffleAllMusic()
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -305,18 +304,34 @@ class MediaPlaybackService : MediaSessionService() {
             }
         }
 
-        private fun resumeLastQueue() {
-            // A queue is already loaded (any play/pause state): do nothing so tapping
-            // Resume/Now Playing never reloads or restarts the active session.
-            if (activeQueueId != null && exoPlayer.mediaItemCount > 0) return
+        private fun resumeLastQueue(mediaTypeString: String?) {
+            val wantedType = mediaTypeString?.let {
+                try { MediaType.valueOf(it) } catch (e: IllegalArgumentException) { null }
+            }
+            if (exoPlayer.mediaItemCount > 0) {
+                // Something is loaded: playing is enough for a generic resume, and for a
+                // same-library resume; a different library cuts over to its saved queue.
+                if (wantedType == null || activeQueueMediaType == wantedType) {
+                    exoPlayer.play()
+                    return
+                }
+            }
             serviceScope.launch {
                 val db = AppDatabase.getInstance(applicationContext)
                 val load = withContext(Dispatchers.IO) {
-                    val saved = db.playbackQueueDao().getMostRecent() ?: return@withContext null
+                    val saved = if (wantedType != null) {
+                        // Restore this library's own saved queue, falling back to the most
+                        // recent one of that type (e.g. music survives podcast detours).
+                        db.playbackQueueDao().getAll()
+                            .filter { it.mediaType == wantedType }
+                            .maxByOrNull { it.lastUpdatedTimestamp }
+                    } else {
+                        db.playbackQueueDao().getMostRecent()
+                    } ?: return@withContext null
                     queueLoadFromSaved(db, saved)
                 }
                 if (load == null) {
-                    Log.w(TAG, "RESUME_LAST_QUEUE: no restorable queue")
+                    Log.w(TAG, "RESUME_LAST_QUEUE: no restorable queue for type=$wantedType")
                     return@launch
                 }
                 applyQueue(load)
@@ -390,6 +405,11 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     private fun applyQueue(load: QueueLoad) {
+        // Switching libraries: snapshot the outgoing queue's exact index/position so it
+        // resumes later exactly as left (order + shuffle are already persisted).
+        if (activeQueueId != null && activeQueueId != load.queueId && exoPlayer.mediaItemCount > 0) {
+            persistCurrentQueue()
+        }
         activeQueueId = load.queueId
         activeQueueMediaType = load.mediaType
         activeQueueIds = load.items.map { it.id }

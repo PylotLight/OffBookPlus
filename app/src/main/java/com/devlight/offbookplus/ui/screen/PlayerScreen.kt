@@ -68,6 +68,8 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import com.google.android.horologist.annotations.ExperimentalHorologistApi
 import com.google.android.horologist.media.ui.components.PlayPauseButton
+import com.devlight.offbookplus.model.MediaType
+import com.devlight.offbookplus.ui.viewmodel.LastQueueInfo
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
 import java.text.DecimalFormat
 import java.util.concurrent.TimeUnit
@@ -115,8 +117,9 @@ fun PlayerScreen(
                     )
                 } else if (lastQueue != null) {
                     Spacer(modifier = Modifier.height(12.dp))
+                    val queue = lastQueue ?: LastQueueInfo("", MediaType.MUSIC)
                     Chip(
-                        onClick = { viewModel.resumeLastQueue() },
+                        onClick = { viewModel.resumeLastQueue(queue.mediaType) },
                         label = {
                             Text(
                                 text = "Resume",

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,14 +42,31 @@ fun LibraryScreen(
     val mediaItems by libraryViewModel.uiState.collectAsState()
     val progressByPlaylist by libraryViewModel.progressByPlaylist.collectAsState()
     val playbackState by playbackViewModel.playbackState.collectAsState()
+    val savedQueues by playbackViewModel.savedQueues.collectAsState()
+    val hasSavedQueue = savedQueues.any { it.mediaType == mediaType }
 
     LaunchedEffect(mediaType) {
         libraryViewModel.checkAndLoadMedia(mediaType)
+        playbackViewModel.refreshSavedQueues()
     }
 
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
+        }
+        if (hasSavedQueue) {
+            item {
+                Chip(
+                    onClick = {
+                        playbackViewModel.resumeLastQueue(mediaType)
+                        onNavigateToPlayer()
+                    },
+                    label = { Text("Resume", maxLines = 1) },
+                    icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                    colors = ChipDefaults.primaryChipColors(),
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
         if (mediaType == MediaType.MUSIC && mediaItems.isNotEmpty()) {
             item {
