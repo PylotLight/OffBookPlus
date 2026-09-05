@@ -104,7 +104,18 @@ spec:
                 if [ -z "$port" ]; then
                   echo "== fallback: polite nmap sweep (up to ~2 min)"
                   scan="$(nmap -Pn --open -T4 --max-retries 2 -p 5555,32000-61000 "$WATCH_IP" -oG - 2>/dev/null || true)"
-                  port="$(grep -oE '[0-9]+/open' <<<"$scan" | head -1 | cut -d/ -f1)"
+                  for cand in $(grep -oE '[0-9]+/open' <<<"$scan" | cut -d/ -f1 | sort -un); do
+                    adb connect "$WATCH_IP:$cand" >/dev/null 2>&1 || true
+                    sleep 0.5
+                    st="$(adb -s "$WATCH_IP:$cand" get-state 2>/dev/null || true)"
+                    if [ "$st" = "device" ]; then
+                      port="$cand"
+                      echo "== nmap hit: $port (verified device)"
+                      break
+                    fi
+                    echo "== nmap candidate $cand open but not adb (state=$st)"
+                    adb disconnect "$WATCH_IP:$cand" >/dev/null 2>&1 || true
+                  done
                 fi
                 [ -n "$port" ] || return 1
                 target="$WATCH_IP:$port"
@@ -146,7 +157,7 @@ spec:
 
               case "$ACTION" in
                 discover)
-                  recover_port || { echo "!! no open port found (wake the watch, check Debug over Wi-Fi, retry)"; exit 1; }
+                  recover_port || { echo "!! no verified adb port found on $WATCH_IP (wake the watch, re-toggle Debug over Wi-Fi, or plug the watch into the Mac via USB and use test.sh)"; exit 1; }
                   sleep 2
                   state="$(adb -s "$target" get-state 2>/dev/null || true)"
                   if [ "$state" != "device" ]; then

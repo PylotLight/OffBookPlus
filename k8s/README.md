@@ -116,6 +116,16 @@ the watch:
 
 Set `WATCH_IP` in `k8s/config.env` to skip the `--ip` flag.
 
+### Wired (USB) watch
+
+`test.sh` presets also work with the watch plugged into the Mac: local adb
+sees USB devices, cluster Jobs cannot, so a detected USB watch is used
+directly (install/launch/shot/log/tap/swipe/key/shell/uninstall). `fix` over
+USB additionally re-pins Wi-Fi ADB at `:5555` and saves it to
+`k8s/.watch.local` — the quickest repair whenever wireless discovery gets
+stuck. `WATCH_MODE=wired|wireless` forces a path (default: auto, prefer
+wired). Requires `adb` on the Mac (`brew install android-platform-tools`).
+
 ## Implementation notes
 
 - **aapt2 under emulation**: Google publishes no arm64 Linux aapt2; the
