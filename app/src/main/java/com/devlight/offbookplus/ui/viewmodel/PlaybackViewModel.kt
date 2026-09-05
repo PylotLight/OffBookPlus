@@ -43,16 +43,7 @@ data class LastQueueInfo(
 
 class PlaybackViewModel(application: Application) : AndroidViewModel(application) {
 
-    private companion object {
-        const val PREFS_NAME = "PlaybackPrefs"
-        const val KEY_SPEED_PREFIX = "playback_speed_"
-        const val KEY_REWIND_MS = "rewind_ms"
-        const val KEY_FORWARD_MS = "forward_ms"
-        const val DEFAULT_REWIND_MS = 15_000L
-        const val DEFAULT_FORWARD_MS = 30_000L
-    }
-
-    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences(PlaybackContract.PREFS_NAME, Context.MODE_PRIVATE)
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
     private var mediaControllerFuture: ListenableFuture<MediaController>
@@ -62,9 +53,9 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     private var progressUpdateJob: Job? = null
     private val controllerListener = MediaControllerListener()
 
-    private val _rewindMs = MutableStateFlow(prefs.getLong(KEY_REWIND_MS, DEFAULT_REWIND_MS))
+    private val _rewindMs = MutableStateFlow(prefs.getLong(PlaybackContract.KEY_REWIND_MS, PlaybackContract.DEFAULT_REWIND_MS))
     val rewindMs: StateFlow<Long> = _rewindMs.asStateFlow()
-    private val _forwardMs = MutableStateFlow(prefs.getLong(KEY_FORWARD_MS, DEFAULT_FORWARD_MS))
+    private val _forwardMs = MutableStateFlow(prefs.getLong(PlaybackContract.KEY_FORWARD_MS, PlaybackContract.DEFAULT_FORWARD_MS))
     val forwardMs: StateFlow<Long> = _forwardMs.asStateFlow()
 
     private val _lastQueue = MutableStateFlow<LastQueueInfo?>(null)
@@ -206,7 +197,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             mediaController?.setPlaybackParameters(PlaybackParameters(speed))
             Log.d(TAG, "Setting playback speed to $speed")
             if (mediaType != null) {
-                prefs.edit { putFloat(KEY_SPEED_PREFIX + mediaType.name, speed) }
+                prefs.edit { putFloat(PlaybackContract.KEY_SPEED_PREFIX + mediaType.name, speed) }
                 Log.d(TAG, "Saved speed $speed for ${mediaType.name}")
             }
         } else {
@@ -261,13 +252,13 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     fun cycleRewindInterval() {
         val next = nextInterval(_rewindMs.value)
-        prefs.edit { putLong(KEY_REWIND_MS, next) }
+        prefs.edit { putLong(PlaybackContract.KEY_REWIND_MS, next) }
         _rewindMs.value = next
     }
 
     fun cycleForwardInterval() {
         val next = nextInterval(_forwardMs.value)
-        prefs.edit { putLong(KEY_FORWARD_MS, next) }
+        prefs.edit { putLong(PlaybackContract.KEY_FORWARD_MS, next) }
         _forwardMs.value = next
     }
 

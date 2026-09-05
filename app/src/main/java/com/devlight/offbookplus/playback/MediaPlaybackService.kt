@@ -13,7 +13,6 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -53,8 +52,6 @@ private const val TAG = "MediaPlaybackService"
 private const val HISTORY_FLUSH_INTERVAL_MS = 60_000L
 private const val HISTORY_TICK_MS = 30_000L
 private const val HISTORY_MIN_RECORD_MS = 1_000L
-private const val SPEED_PREFS_NAME = "PlaybackPrefs"
-private const val SPEED_KEY_PREFIX = "playback_speed_"
 
 class MediaPlaybackService : MediaSessionService() {
 
@@ -199,6 +196,11 @@ class MediaPlaybackService : MediaSessionService() {
         }
     }
 
+    /** Reads the user-configured skip increments so BT FF/REW match in-app button behaviour. */
+    private fun readSeekIncrementMs(key: String, defaultMs: Long): Long =
+        getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
+            .getLong(key, defaultMs)
+
     private data class QueueLoad(
         val queueId: String,
         val mediaType: MediaType,
@@ -224,43 +226,13 @@ class MediaPlaybackService : MediaSessionService() {
                 .build()
         }
 
-        override fun onMediaButtonEvent(session: MediaSession, controller: MediaSession.ControllerInfo, mediaButtonIntent: Intent): Boolean {
-            val keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java) ?: return false
-            if (keyEvent.action != KeyEvent.ACTION_DOWN) return true
-
-            when (keyEvent.keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                    exoPlayer.play()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                    exoPlayer.pause()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                    exoPlayer.seekToNextMediaItem()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                    if (exoPlayer.currentPosition > 3_000) {
-                        exoPlayer.seekTo(0)
-                    } else {
-                        exoPlayer.seekToPreviousMediaItem()
-                    }
-                    return true
-                }
-            }
-            return false
-        }
-
-        override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             if (exoPlayer.mediaItemCount > 0) {
+                // STATE_ENDED means the queue played out: restart from the top, not the end.
+                val index = if (exoPlayer.playbackState == Player.STATE_ENDED) 0 else exoPlayer.currentMediaItemIndex
+                val position = if (exoPlayer.playbackState == Player.STATE_ENDED) 0L else exoPlayer.currentPosition
                 val mediaItems = List(exoPlayer.mediaItemCount) { exoPlayer.getMediaItemAt(it) }
-                return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(mediaItems, exoPlayer.currentMediaItemIndex, exoPlayer.currentPosition))
+                return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(mediaItems, index, position))
             }
 
             val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
@@ -463,8 +435,8 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     private fun applySavedSpeed(mediaType: MediaType) {
-        val speed = getSharedPreferences(SPEED_PREFS_NAME, MODE_PRIVATE)
-            .getFloat(SPEED_KEY_PREFIX + mediaType.name, 1.0f)
+        val speed = getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
+            .getFloat(PlaybackContract.KEY_SPEED_PREFIX + mediaType.name, 1.0f)
         exoPlayer.setPlaybackParameters(PlaybackParameters(speed))
     }
 
@@ -606,7 +578,11 @@ class MediaPlaybackService : MediaSessionService() {
         }
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
-        exoPlayer = ExoPlayer.Builder(this).setAudioAttributes(audioAttributes, true).build()
+        exoPlayer = ExoPlayer.Builder(this)
+            .setAudioAttributes(audioAttributes, true)
+            .setSeekBackIncrementMs(readSeekIncrementMs(PlaybackContract.KEY_REWIND_MS, PlaybackContract.DEFAULT_REWIND_MS))
+            .setSeekForwardIncrementMs(readSeekIncrementMs(PlaybackContract.KEY_FORWARD_MS, PlaybackContract.DEFAULT_FORWARD_MS))
+            .build()
 
         val audioOffloadPreferences = TrackSelectionParameters.AudioOffloadPreferences.Builder()
             .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
