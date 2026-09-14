@@ -12,7 +12,9 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.content.SharedPreferences
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -201,6 +203,105 @@ class MediaPlaybackService : MediaSessionService() {
         getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
             .getLong(key, defaultMs)
 
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        when (key) {
+            PlaybackContract.KEY_REWIND_MS ->
+                exoPlayer.setSeekBackIncrementMs(
+                    prefs.getLong(key, PlaybackContract.DEFAULT_REWIND_MS)
+                )
+            PlaybackContract.KEY_FORWARD_MS ->
+                exoPlayer.setSeekForwardIncrementMs(
+                    prefs.getLong(key, PlaybackContract.DEFAULT_FORWARD_MS)
+                )
+        }
+    }
+
+    private var hookClickCount = 0
+    private var hookDispatchJob: kotlinx.coroutines.Job? = null
+
+    private fun tapAction(key: String, default: String): String =
+        getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
+            .getString(key, default) ?: default
+
+    private fun performTapAction(action: String) {
+        when (action) {
+            PlaybackContract.ACTION_TOGGLE -> {
+                if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(exoPlayer.currentMediaItemIndex.coerceAtLeast(0), 0L)
+                    exoPlayer.play()
+                } else if (exoPlayer.isPlaying) {
+                    exoPlayer.pause()
+                } else {
+                    exoPlayer.play()
+                }
+            }
+            PlaybackContract.ACTION_PLAY -> {
+                if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(exoPlayer.currentMediaItemIndex.coerceAtLeast(0), 0L)
+                }
+                exoPlayer.play()
+            }
+            PlaybackContract.ACTION_PAUSE -> exoPlayer.pause()
+            PlaybackContract.ACTION_NEXT -> {
+                if (exoPlayer.hasNextMediaItem()) exoPlayer.seekToNextMediaItem()
+            }
+            PlaybackContract.ACTION_PREVIOUS -> {
+                if (exoPlayer.currentPosition > 3_000) {
+                    exoPlayer.seekTo(0)
+                } else if (exoPlayer.hasPreviousMediaItem()) {
+                    exoPlayer.seekToPreviousMediaItem()
+                }
+            }
+            PlaybackContract.ACTION_REWIND -> {
+                val step = readSeekIncrementMs(
+                    PlaybackContract.KEY_REWIND_MS,
+                    PlaybackContract.DEFAULT_REWIND_MS
+                )
+                exoPlayer.seekTo((exoPlayer.currentPosition - step).coerceAtLeast(0L))
+            }
+            PlaybackContract.ACTION_FORWARD -> {
+                val step = readSeekIncrementMs(
+                    PlaybackContract.KEY_FORWARD_MS,
+                    PlaybackContract.DEFAULT_FORWARD_MS
+                )
+                val duration = exoPlayer.duration
+                val target = exoPlayer.currentPosition + step
+                exoPlayer.seekTo(if (duration > 0) target.coerceIn(0L, duration) else target.coerceAtLeast(0L))
+            }
+            else -> Unit
+        }
+    }
+
+    /** Single headset-hook press; double/triple presses arriving as repeated hooks are
+     * counted and dispatched after a short window, matching the configured tap map. */
+    private fun handleHeadsetHook(): Boolean {
+        if (exoPlayer.mediaItemCount == 0) return false
+        hookClickCount++
+        if (hookDispatchJob?.isActive != true) {
+            hookDispatchJob = serviceScope.launch {
+                delay(450)
+                val clicks = hookClickCount
+                hookClickCount = 0
+                val action = when {
+                    clicks <= 1 -> tapAction(
+                        PlaybackContract.KEY_SINGLE_TAP_ACTION,
+                        PlaybackContract.DEFAULT_SINGLE_TAP_ACTION
+                    )
+                    clicks == 2 -> tapAction(
+                        PlaybackContract.KEY_DOUBLE_TAP_ACTION,
+                        PlaybackContract.DEFAULT_DOUBLE_TAP_ACTION
+                    )
+                    else -> tapAction(
+                        PlaybackContract.KEY_TRIPLE_TAP_ACTION,
+                        PlaybackContract.DEFAULT_TRIPLE_TAP_ACTION
+                    )
+                }
+                performTapAction(action)
+            }
+        }
+        return true
+    }
+
     private data class QueueLoad(
         val queueId: String,
         val mediaType: MediaType,
@@ -223,6 +324,70 @@ class MediaPlaybackService : MediaSessionService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
                 .build()
+        }
+
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaButtonIntent: Intent
+        ): Boolean {
+            val keyEvent =
+                mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    ?: return false
+            if (keyEvent.action != KeyEvent.ACTION_DOWN) return true
+            when (keyEvent.keyCode) {
+                KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ->
+                    return handleHeadsetHook()
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    // Empty player: let the framework drive onPlaybackResumption queue restore.
+                    if (exoPlayer.mediaItemCount == 0) return false
+                    performTapAction(PlaybackContract.ACTION_PLAY)
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    if (exoPlayer.mediaItemCount == 0) return false
+                    performTapAction(PlaybackContract.ACTION_PAUSE)
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_NEXT ->
+                    // Buds report double-tap as NEXT; remap via the user's double-tap action
+                    // (default: play/pause toggle instead of a chapter jump).
+                    return if (exoPlayer.mediaItemCount == 0) {
+                        false
+                    } else {
+                        performTapAction(
+                            tapAction(
+                                PlaybackContract.KEY_DOUBLE_TAP_ACTION,
+                                PlaybackContract.DEFAULT_DOUBLE_TAP_ACTION
+                            )
+                        )
+                        true
+                    }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS ->
+                    // Buds report triple-tap as PREVIOUS; remap via triple-tap action.
+                    return if (exoPlayer.mediaItemCount == 0) {
+                        false
+                    } else {
+                        performTapAction(
+                            tapAction(
+                                PlaybackContract.KEY_TRIPLE_TAP_ACTION,
+                                PlaybackContract.DEFAULT_TRIPLE_TAP_ACTION
+                            )
+                        )
+                        true
+                    }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    if (exoPlayer.mediaItemCount == 0) return false
+                    performTapAction(PlaybackContract.ACTION_FORWARD)
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    if (exoPlayer.mediaItemCount == 0) return false
+                    performTapAction(PlaybackContract.ACTION_REWIND)
+                    return true
+                }
+            }
+            return false
         }
 
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
@@ -615,6 +780,8 @@ class MediaPlaybackService : MediaSessionService() {
             .build()
 
         exoPlayer.addListener(playerListener)
+        getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(prefsListener)
 
         // Tapping the system media notification (swipe-down shade) returns to the player.
         val sessionActivity = packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
@@ -650,6 +817,11 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        runCatching {
+            getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
+                .unregisterOnSharedPreferenceChangeListener(prefsListener)
+        }
+        hookDispatchJob?.cancel()
         endPlaySegment()
         periodicFlushJob?.cancel()
         saveCurrentProgress()

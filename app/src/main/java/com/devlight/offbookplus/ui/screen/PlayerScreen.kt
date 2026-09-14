@@ -28,8 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Forward30
-import androidx.compose.material.icons.filled.Replay30
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -244,7 +244,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CircleIconButton(
-                    imageVector = Icons.Filled.Replay30,
+                    imageVector = Icons.Filled.FastRewind,
                     contentDescription = "Seek back ${rewindMs / 1000}s",
                     enabled = state.isReady
                 ) {
@@ -282,7 +282,7 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.width(10.dp))
 
                 CircleIconButton(
-                    imageVector = Icons.Filled.Forward30,
+                    imageVector = Icons.Filled.FastForward,
                     contentDescription = "Seek forward ${forwardMs / 1000}s",
                     enabled = state.isReady
                 ) {

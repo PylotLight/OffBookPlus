@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Update
@@ -21,6 +22,7 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
+import com.devlight.offbookplus.playback.PlaybackContract
 import com.devlight.offbookplus.ui.NavRoutes
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
 import com.devlight.offbookplus.ui.viewmodel.PlaybackViewModel
@@ -36,6 +38,9 @@ fun SettingsScreen(
     val downloadProgress = viewModel.downloadProgress.collectAsState().value
     val rewindMs by playbackViewModel.rewindMs.collectAsState()
     val forwardMs by playbackViewModel.forwardMs.collectAsState()
+    val singleTap by playbackViewModel.singleTapAction.collectAsState()
+    val doubleTap by playbackViewModel.doubleTapAction.collectAsState()
+    val tripleTap by playbackViewModel.tripleTapAction.collectAsState()
     val context = LocalContext.current
     val currentVersion =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
@@ -71,6 +76,30 @@ fun SettingsScreen(
                 label = { Text("Skip forward: ${forwardMs / 1000}s") },
                 secondaryLabel = { Text("Tap to change") },
                 icon = { Icon(imageVector = Icons.Default.FastForward, contentDescription = "Skip forward interval") }
+            )
+        }
+        item {
+            Chip(
+                onClick = { playbackViewModel.cycleTapAction(PlaybackContract.KEY_SINGLE_TAP_ACTION) },
+                label = { Text("Single tap: ${tapActionLabel(singleTap)}") },
+                secondaryLabel = { Text("Headset button") },
+                icon = { Icon(imageVector = Icons.Default.Headphones, contentDescription = "Single tap action") }
+            )
+        }
+        item {
+            Chip(
+                onClick = { playbackViewModel.cycleTapAction(PlaybackContract.KEY_DOUBLE_TAP_ACTION) },
+                label = { Text("Double tap: ${tapActionLabel(doubleTap)}") },
+                secondaryLabel = { Text("Headset button") },
+                icon = { Icon(imageVector = Icons.Default.Headphones, contentDescription = "Double tap action") }
+            )
+        }
+        item {
+            Chip(
+                onClick = { playbackViewModel.cycleTapAction(PlaybackContract.KEY_TRIPLE_TAP_ACTION) },
+                label = { Text("Triple tap: ${tapActionLabel(tripleTap)}") },
+                secondaryLabel = { Text("Headset button") },
+                icon = { Icon(imageVector = Icons.Default.Headphones, contentDescription = "Triple tap action") }
             )
         }
         item {
@@ -140,4 +169,15 @@ fun SettingsScreen(
             )
         }
     }
+}
+
+private fun tapActionLabel(action: String): String = when (action) {
+    PlaybackContract.ACTION_TOGGLE -> "Play/pause"
+    PlaybackContract.ACTION_PLAY -> "Play"
+    PlaybackContract.ACTION_PAUSE -> "Pause"
+    PlaybackContract.ACTION_NEXT -> "Next chapter"
+    PlaybackContract.ACTION_PREVIOUS -> "Previous chapter"
+    PlaybackContract.ACTION_REWIND -> "Seek back"
+    PlaybackContract.ACTION_FORWARD -> "Seek forward"
+    else -> "Off"
 }

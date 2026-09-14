@@ -58,6 +58,13 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     private val _forwardMs = MutableStateFlow(prefs.getLong(PlaybackContract.KEY_FORWARD_MS, PlaybackContract.DEFAULT_FORWARD_MS))
     val forwardMs: StateFlow<Long> = _forwardMs.asStateFlow()
 
+    private val _singleTapAction = MutableStateFlow(prefs.getString(PlaybackContract.KEY_SINGLE_TAP_ACTION, PlaybackContract.DEFAULT_SINGLE_TAP_ACTION) ?: PlaybackContract.DEFAULT_SINGLE_TAP_ACTION)
+    val singleTapAction: StateFlow<String> = _singleTapAction.asStateFlow()
+    private val _doubleTapAction = MutableStateFlow(prefs.getString(PlaybackContract.KEY_DOUBLE_TAP_ACTION, PlaybackContract.DEFAULT_DOUBLE_TAP_ACTION) ?: PlaybackContract.DEFAULT_DOUBLE_TAP_ACTION)
+    val doubleTapAction: StateFlow<String> = _doubleTapAction.asStateFlow()
+    private val _tripleTapAction = MutableStateFlow(prefs.getString(PlaybackContract.KEY_TRIPLE_TAP_ACTION, PlaybackContract.DEFAULT_TRIPLE_TAP_ACTION) ?: PlaybackContract.DEFAULT_TRIPLE_TAP_ACTION)
+    val tripleTapAction: StateFlow<String> = _tripleTapAction.asStateFlow()
+
     private val _lastQueue = MutableStateFlow<LastQueueInfo?>(null)
     val lastQueue: StateFlow<LastQueueInfo?> = _lastQueue.asStateFlow()
     private val _savedQueues = MutableStateFlow<List<LastQueueInfo>>(emptyList())
@@ -274,6 +281,27 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         val next = nextInterval(_forwardMs.value)
         prefs.edit { putLong(PlaybackContract.KEY_FORWARD_MS, next) }
         _forwardMs.value = next
+    }
+
+    fun cycleTapAction(which: String) {
+        val current = when (which) {
+            PlaybackContract.KEY_DOUBLE_TAP_ACTION -> _doubleTapAction.value
+            PlaybackContract.KEY_TRIPLE_TAP_ACTION -> _tripleTapAction.value
+            else -> _singleTapAction.value
+        }
+        val next = nextTapAction(current)
+        prefs.edit { putString(which, next) }
+        when (which) {
+            PlaybackContract.KEY_DOUBLE_TAP_ACTION -> _doubleTapAction.value = next
+            PlaybackContract.KEY_TRIPLE_TAP_ACTION -> _tripleTapAction.value = next
+            else -> _singleTapAction.value = next
+        }
+    }
+
+    private fun nextTapAction(current: String): String {
+        val order = PlaybackContract.TAP_ACTIONS
+        val index = order.indexOf(current)
+        return if (index < 0) order.first() else order[(index + 1) % order.size]
     }
 
     private fun nextInterval(current: Long): Long = when (current) {
