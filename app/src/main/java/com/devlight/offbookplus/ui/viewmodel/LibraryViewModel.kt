@@ -6,7 +6,12 @@ import android.content.Intent
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.SharedPreferences
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
@@ -193,15 +198,31 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private fun initiateInstall() {
         Log.i(TAG, "Attempting to initiate APK installation.")
-        val apkFile = File(getApplication<Application>().getExternalFilesDir(null), "update.apk")
+        val app = getApplication<Application>()
+        val apkFile = File(app.getExternalFilesDir(null), "update.apk")
         if (!apkFile.exists()) {
             Log.e(TAG, "APK file not found at expected path: ${apkFile.absolutePath}")
+            toast("Update file missing, please download again.")
+            _updateStatus.value = UpdateStatus.ERROR
+            return
+        }
+        // Android 8+ silently drops the installer intent unless the user granted
+        // "Install unknown apps" for us. Route them to the grant page instead.
+        if (!app.packageManager.canRequestPackageInstalls()) {
+            Log.i(TAG, "Unknown-sources grant missing, opening system settings.")
+            toast("Allow installs from OffBook+, then tap install again.")
+            runCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
+                        .addFlags(FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
             return
         }
         try {
             val fileUri = FileProvider.getUriForFile(
-                getApplication(),
-                "${getApplication<Application>().packageName}.provider",
+                app,
+                "${app.packageName}.provider",
                 apkFile
             )
             val installIntent = Intent(Intent.ACTION_VIEW)
@@ -209,11 +230,20 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 .addFlags(FLAG_GRANT_READ_URI_PERMISSION)
                 .addFlags(FLAG_ACTIVITY_NEW_TASK)
 
-            getApplication<Application>().startActivity(installIntent)
+            app.startActivity(installIntent)
             Log.i(TAG, "Installation Intent sent successfully.")
         } catch (e: Exception) {
             Log.e(TAG, "FATAL: Failed to initiate installation via FileProvider/Intent.", e)
+            toast("Could not start installer.")
             _updateStatus.value = UpdateStatus.ERROR
+        }
+    }
+
+    /** initiateInstall can run on an IO thread; Toasts must post to the main looper. */
+    private fun toast(message: String) {
+        val app = getApplication<Application>()
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(app, message, Toast.LENGTH_LONG).show()
         }
     }
 

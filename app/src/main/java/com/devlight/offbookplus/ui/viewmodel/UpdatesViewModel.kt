@@ -6,7 +6,12 @@ import android.content.Intent
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.SharedPreferences
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
@@ -179,6 +184,22 @@ class UpdatesViewModel(application: Application) : AndroidViewModel(application)
         val apkFile = File(app.getExternalFilesDir(null), "update.apk")
         if (!apkFile.exists()) {
             Log.e(TAG, "APK file not found at expected path: ${apkFile.absolutePath}")
+            toast("Update file missing, please download again.")
+            _downloadStatus.update { UpdateStatus.ERROR }
+            _activeCompleteUrl.value = null
+            return
+        }
+        // Android 8+ silently drops the installer intent unless the user granted
+        // "Install unknown apps" for us. Route them to the grant page instead.
+        if (!app.packageManager.canRequestPackageInstalls()) {
+            Log.i(TAG, "Unknown-sources grant missing, opening system settings.")
+            toast("Allow installs from OffBook+, then tap install again.")
+            runCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
+                        .addFlags(FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
             return
         }
         try {
@@ -195,7 +216,16 @@ class UpdatesViewModel(application: Application) : AndroidViewModel(application)
             Log.i(TAG, "Installation Intent sent successfully.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initiate installation via FileProvider/Intent.", e)
+            toast("Could not start installer.")
             _downloadStatus.update { UpdateStatus.ERROR }
+        }
+    }
+
+    /** initiateInstall can run on an IO thread; Toasts must post to the main looper. */
+    private fun toast(message: String) {
+        val app = getApplication<Application>()
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(app, message, Toast.LENGTH_LONG).show()
         }
     }
 
