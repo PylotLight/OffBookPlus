@@ -35,6 +35,7 @@ import com.devlight.offbookplus.data.MediaItemEntity
 import com.devlight.offbookplus.data.PlayHistoryRecorder
 import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.data.PlaybackQueueEntity
+import com.devlight.offbookplus.data.TrackProgressEntity
 import com.devlight.offbookplus.model.MediaType
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -54,6 +55,7 @@ private const val TAG = "MediaPlaybackService"
 private const val HISTORY_FLUSH_INTERVAL_MS = 60_000L
 private const val HISTORY_TICK_MS = 30_000L
 private const val HISTORY_MIN_RECORD_MS = 1_000L
+private const val FOREGROUND_SERVICE_TIMEOUT_MS = 120_000L
 
 class MediaPlaybackService : MediaSessionService() {
 
@@ -93,16 +95,45 @@ class MediaPlaybackService : MediaSessionService() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 finishPendingItem()
+                clearFinishedTrackProgress()
             }
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 noteCurrentItem()
                 beginPlaySegment()
+                startPeriodicFlush()
             } else {
                 endPlaySegment()
                 saveCurrentProgress()
                 persistCurrentQueue()
+                saveTrackProgressForCurrent()
+                stopPeriodicFlush()
+            }
+        }
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int
+        ) {
+            val oldItem = oldPosition.mediaItem
+            val newItem = newPosition.mediaItem
+            if (oldItem != null && oldItem.mediaId != newItem?.mediaId) {
+                if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                    // Old item played to its natural end: it is finished, drop its resume.
+                    val finishedId = oldItem.mediaId
+                    historyScope.launch {
+                        runCatching {
+                            AppDatabase.getInstance(applicationContext).trackProgressDao().delete(finishedId)
+                        }
+                    }
+                } else {
+                    saveTrackProgressSnapshot(
+                        mediaItem = oldItem,
+                        positionMs = oldPosition.positionMs,
+                        durationMs = C.TIME_UNSET
+                    )
+                }
             }
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -117,11 +148,11 @@ class MediaPlaybackService : MediaSessionService() {
                 beginPlaySegment()
                 noteCurrentItem()
             }
+            // Note: no saveTrackProgressForCurrent() here. The outgoing item was
+            // already snapshotted by onPositionDiscontinuity with its exact farewell
+            // position; the incoming item is at ~0 and must not wipe its own resume.
             saveCurrentProgress()
             persistCurrentQueue()
-        }
-        override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
         }
     }
 
@@ -442,7 +473,12 @@ class MediaPlaybackService : MediaSessionService() {
                         if (tappedIndex == exoPlayer.currentMediaItemIndex) {
                             exoPlayer.play()
                         } else {
-                            exoPlayer.seekTo(tappedIndex, 0L)
+                            // Resume this episode/chapter where it was left, if anywhere.
+                            val resumePos = withContext(Dispatchers.IO) {
+                                if (selectedItemEntity.mediaType == MediaType.MUSIC) 0L
+                                else db.trackProgressDao().load(selectedItemEntity.id)?.positionMs ?: 0L
+                            }
+                            exoPlayer.seekTo(tappedIndex, resumePos.coerceAtLeast(0L))
                             exoPlayer.play()
                         }
                         return@launch
@@ -465,7 +501,13 @@ class MediaPlaybackService : MediaSessionService() {
                     Log.w(TAG, "No items for playlist $playlistId, abort")
                     return@launch
                 }
-                applyQueue(QueueLoad(playlistId, mediaType, items, items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0), 0L, false))
+                // A saved per-item resume survives even without a persisted queue
+                // (e.g. first tap after an upgrade or a rescan that dropped the queue).
+                val freshResumePos = withContext(Dispatchers.IO) {
+                    if (selectedItemEntity.mediaType == MediaType.MUSIC) 0L
+                    else db.trackProgressDao().load(selectedItemEntity.id)?.positionMs ?: 0L
+                }
+                applyQueue(QueueLoad(playlistId, mediaType, items, items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0), freshResumePos.coerceAtLeast(0L), false))
             }
         }
 
@@ -564,8 +606,15 @@ class MediaPlaybackService : MediaSessionService() {
             // Tapped item isn't in the saved queue (library changed): caller rebuilds fresh.
             return null
         }
-        // Re-tapping the saved current track resumes its position; any other tap starts at 0.
-        val position = if (tappedIndex == load.startIndex) load.startPositionMs else 0L
+        // Re-tapping the saved current track resumes its position; any other tap
+        // resumes that item's own saved position (podcasts/audiobooks) or starts at 0.
+        val position = if (tappedIndex == load.startIndex) {
+            load.startPositionMs
+        } else if (mediaType == MediaType.MUSIC) {
+            0L
+        } else {
+            db.trackProgressDao().load(tappedId)?.positionMs?.coerceAtLeast(0L) ?: 0L
+        }
         return load.copy(startIndex = tappedIndex, startPositionMs = position, mediaType = mediaType)
     }
 
@@ -574,6 +623,7 @@ class MediaPlaybackService : MediaSessionService() {
         // resumes later exactly as left (order + shuffle are already persisted).
         if (activeQueueId != null && activeQueueId != load.queueId && exoPlayer.mediaItemCount > 0) {
             persistCurrentQueue()
+            saveTrackProgressForCurrent()
         }
         activeQueueId = load.queueId
         activeQueueMediaType = load.mediaType
@@ -694,6 +744,96 @@ class MediaPlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * Per-item resume for spoken-word libraries (podcasts, audiobooks). Music is
+     * excluded: it shares one global queue and always starts tracks from the top.
+     * A position within 1s of the end (or <= 0) clears the saved resume instead.
+     */
+    private fun saveTrackProgressForCurrent() {
+        val mediaItem = exoPlayer.currentMediaItem ?: return
+        saveTrackProgressSnapshot(
+            mediaItem = mediaItem,
+            positionMs = exoPlayer.currentPosition,
+            durationMs = exoPlayer.duration
+        )
+    }
+
+    private fun saveTrackProgressSnapshot(mediaItem: MediaItem, positionMs: Long, durationMs: Long) {
+        val mediaType = try {
+            mediaItem.mediaMetadata.extras?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)
+                ?.let { MediaType.valueOf(it) }
+        } catch (e: Exception) { null } ?: return
+        if (mediaType == MediaType.MUSIC) return
+        val mediaId = mediaItem.mediaId
+        if (mediaId.isBlank()) return
+        val playlistId = mediaItem.mediaMetadata.albumTitle?.toString() ?: return
+        if (positionMs > 0 && (durationMs <= 0 || positionMs < durationMs - 1000)) {
+            val row = TrackProgressEntity(
+                mediaId = mediaId,
+                playlistId = playlistId,
+                mediaType = mediaType,
+                positionMs = positionMs
+            )
+            historyScope.launch(Dispatchers.IO) {
+                runCatching {
+                    AppDatabase.getInstance(applicationContext).trackProgressDao().save(row)
+                }
+            }
+        } else if (durationMs == C.TIME_UNSET) {
+            // No duration to clamp against (mid-skip snapshot with nothing to save):
+            // never wipe an existing resume we cannot verify as finished.
+            return
+        } else {
+            historyScope.launch(Dispatchers.IO) {
+                runCatching {
+                    AppDatabase.getInstance(applicationContext).trackProgressDao().delete(mediaId)
+                }
+            }
+        }
+    }
+
+    private fun clearFinishedTrackProgress() {
+        val mediaItem = exoPlayer.currentMediaItem ?: return
+        val mediaType = try {
+            mediaItem.mediaMetadata.extras?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)
+                ?.let { MediaType.valueOf(it) }
+        } catch (e: Exception) { null } ?: return
+        if (mediaType == MediaType.MUSIC) return
+        val finishedId = mediaItem.mediaId
+        historyScope.launch(Dispatchers.IO) {
+            runCatching {
+                AppDatabase.getInstance(applicationContext).trackProgressDao().delete(finishedId)
+            }
+        }
+    }
+
+    /**
+     * The 30s safety-net loop only runs while actually playing. Previously it woke
+     * the (foreground) process every 30s for the whole service lifetime, including
+     * long paused stretches where both flushes early-returned anyway.
+     */
+    private fun startPeriodicFlush() {
+        if (periodicFlushJob?.isActive == true) return
+        periodicFlushJob = serviceScope.launch {
+            while (isActive) {
+                delay(HISTORY_TICK_MS)
+                periodicHistoryFlush()
+                periodicTrackProgressSave()
+            }
+        }
+    }
+
+    private fun stopPeriodicFlush() {
+        periodicFlushJob?.cancel()
+        periodicFlushJob = null
+    }
+
+    /** Safety net so long uninterrupted sessions still persist resume on every tick. */
+    private fun periodicTrackProgressSave() {
+        if (!exoPlayer.isPlaying) return
+        saveTrackProgressForCurrent()
+    }
+
     // --- Play history helpers ---
 
     private fun elapsedPlayMs(): Long {
@@ -757,11 +897,16 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Drop out of the foreground soon after pausing instead of holding a
+        // mediaPlayback foreground service for Media3's default 10 minutes.
+        // The shade/BT resume path (buildResumptionFromDb) restarts us on demand.
+        setForegroundServiceTimeoutMs(FOREGROUND_SERVICE_TIMEOUT_MS)
         historyRecorder = PlayHistoryRecorder(AppDatabase.getInstance(applicationContext))
         historyScope.launch {
             runCatching { AppDatabase.getInstance(applicationContext).playHistoryDao().deleteNonMusic() }
         }
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
         exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
@@ -805,13 +950,7 @@ class MediaPlaybackService : MediaSessionService() {
             @Suppress("DEPRECATION")
             registerReceiver(becomingNoisyReceiver, noisyFilter)
         }
-
-        periodicFlushJob = serviceScope.launch {
-            while (isActive) {
-                delay(HISTORY_TICK_MS)
-                periodicHistoryFlush()
-            }
-        }
+        // No periodic loop here: startPeriodicFlush() runs it only while playing.
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -826,6 +965,7 @@ class MediaPlaybackService : MediaSessionService() {
         periodicFlushJob?.cancel()
         saveCurrentProgress()
         persistCurrentQueue()
+        saveTrackProgressForCurrent()
         serviceScope.cancel()
         runCatching { unregisterReceiver(becomingNoisyReceiver) }
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)

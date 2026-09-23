@@ -11,8 +11,8 @@ import androidx.room.TypeConverters
  * Defines the entities (tables) and provides access to the DAOs.
  */
 @Database(
-    entities = [PlaybackProgressEntity::class, MediaItemEntity::class, PlayHistoryEntity::class, PlaybackQueueEntity::class],
-    version = 4,
+    entities = [PlaybackProgressEntity::class, MediaItemEntity::class, PlayHistoryEntity::class, PlaybackQueueEntity::class, TrackProgressEntity::class],
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(MediaTypeConverter::class)
@@ -22,6 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun mediaItemDao(): MediaItemDao
     abstract fun playHistoryDao(): PlayHistoryDao
     abstract fun playbackQueueDao(): PlaybackQueueDao
+    abstract fun trackProgressDao(): TrackProgressDao
 
     companion object {
         @Volatile
@@ -34,7 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "offbookplus_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
@@ -59,6 +60,22 @@ abstract class AppDatabase : RoomDatabase() {
                         currentIndex INTEGER NOT NULL DEFAULT 0,
                         positionMs INTEGER NOT NULL DEFAULT 0,
                         shuffleEnabled INTEGER NOT NULL DEFAULT 0,
+                        lastUpdatedTimestamp INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS track_progress (
+                        mediaId TEXT NOT NULL PRIMARY KEY,
+                        playlistId TEXT NOT NULL,
+                        mediaType TEXT NOT NULL,
+                        positionMs INTEGER NOT NULL DEFAULT 0,
                         lastUpdatedTimestamp INTEGER NOT NULL DEFAULT 0
                     )
                     """.trimIndent()

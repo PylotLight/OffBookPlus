@@ -25,6 +25,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.MaterialTheme
 import com.devlight.offbookplus.data.PlaybackProgressEntity
+import com.devlight.offbookplus.data.TrackProgressEntity
 import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
 import com.devlight.offbookplus.ui.viewmodel.LibraryViewModel
@@ -41,6 +42,7 @@ fun LibraryScreen(
 ) {
     val mediaItems by libraryViewModel.uiState.collectAsState()
     val progressByPlaylist by libraryViewModel.progressByPlaylist.collectAsState()
+    val trackProgressByMediaId by libraryViewModel.trackProgressByMediaId.collectAsState()
     val playbackState by playbackViewModel.playbackState.collectAsState()
     val savedQueues by playbackViewModel.savedQueues.collectAsState()
     val hasSavedQueue = savedQueues.any { it.mediaType == mediaType }
@@ -90,8 +92,15 @@ fun LibraryScreen(
             }
         } else {
             items(mediaItems) { item ->
-                // Music shares one queue across all tracks, so per-card progress only
-                // makes sense for audiobooks/podcasts (one playlist per folder).
+                // Music shares one queue across all tracks, so resume badges only
+                // make sense for audiobooks/podcasts. Each episode/chapter keeps its
+                // own resume; the playlist row is kept as a fallback for audiobooks
+                // saved before per-item progress existed.
+                val trackProgress = if (item.mediaType == MediaType.MUSIC) {
+                    null
+                } else {
+                    trackProgressByMediaId[item.id]
+                }
                 val progress = if (item.mediaType == MediaType.MUSIC) {
                     null
                 } else {
@@ -101,6 +110,7 @@ fun LibraryScreen(
                     item = item,
                     isCurrent = playbackState.mediaId == item.id,
                     isPlaying = playbackState.isPlaying,
+                    trackProgress = trackProgress,
                     progress = progress,
                     onClick = { onItemClick(item.id, item.mediaType) }
                 )
@@ -114,6 +124,7 @@ private fun MediaItemCard(
     item: MediaItem,
     isCurrent: Boolean,
     isPlaying: Boolean,
+    trackProgress: TrackProgressEntity?,
     progress: PlaybackProgressEntity?,
     onClick: () -> Unit
 ) {
@@ -126,12 +137,26 @@ private fun MediaItemCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
-        } else if (item.mediaType == MediaType.AUDIOBOOKS && progress != null && progress.playbackPositionMs > 0) {
-            Text(
-                text = "Played ${formatTime(progress.playbackPositionMs)} · ${relativeTime(progress.lastUpdatedTimestamp)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+        } else if (item.mediaType != MediaType.MUSIC) {
+            val perItemMs = trackProgress?.positionMs?.takeIf { it > 0 }
+            val perItemTs = trackProgress?.lastUpdatedTimestamp
+            // Legacy fallback, audiobooks only: installs from before per-item progress
+            // only have the playlist-level row. Podcasts never displayed that row, so
+            // showing it on every episode card would be misleading.
+            val fallbackMs = if (item.mediaType == MediaType.AUDIOBOOKS) {
+                progress?.playbackPositionMs?.takeIf { it > 0 }
+            } else {
+                null
+            }
+            val resumeMs = perItemMs ?: fallbackMs
+            val resumeTs = if (perItemMs != null) perItemTs else progress?.lastUpdatedTimestamp
+            if (resumeMs != null && resumeTs != null) {
+                Text(
+                    text = "Played ${formatTime(resumeMs)} · ${relativeTime(resumeTs)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

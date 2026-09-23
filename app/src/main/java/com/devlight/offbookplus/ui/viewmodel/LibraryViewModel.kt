@@ -15,6 +15,7 @@ import com.devlight.offbookplus.data.AppDatabase
 import com.devlight.offbookplus.data.GitHubRelease
 import com.devlight.offbookplus.data.LocalFileScanner
 import com.devlight.offbookplus.data.PlaybackProgressEntity
+import com.devlight.offbookplus.data.TrackProgressEntity
 import com.devlight.offbookplus.data.UpdateDownloader
 import com.devlight.offbookplus.model.MediaItem
 import com.devlight.offbookplus.model.MediaType
@@ -56,6 +57,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<List<MediaItem>> = _uiState.asStateFlow()
     private val _progressByPlaylist = MutableStateFlow<Map<String, PlaybackProgressEntity>>(emptyMap())
     val progressByPlaylist: StateFlow<Map<String, PlaybackProgressEntity>> = _progressByPlaylist.asStateFlow()
+    private val _trackProgressByMediaId = MutableStateFlow<Map<String, TrackProgressEntity>>(emptyMap())
+    val trackProgressByMediaId: StateFlow<Map<String, TrackProgressEntity>> = _trackProgressByMediaId.asStateFlow()
     private val _downloadUrl = MutableStateFlow<String?>(null)
 //    val downloadUrl: StateFlow<String?> = _downloadUrl.asStateFlow()
 
@@ -286,13 +289,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadMedia(mediaType: MediaType) {
         viewModelScope.launch {
-            val (itemsFromDb, progressList) = withContext(Dispatchers.IO) {
-                mediaItemDao.getItemsByMediaType(mediaType.name) to progressDao.getAllProgressOnce()
+            val (itemsFromDb, progressList, trackProgressList) = withContext(Dispatchers.IO) {
+                val db = AppDatabase.getInstance(getApplication())
+                Triple(
+                    mediaItemDao.getItemsByMediaType(mediaType.name),
+                    progressDao.getAllProgressOnce(),
+                    db.trackProgressDao().getAllOnce()
+                )
             }
             _uiState.value = itemsFromDb.map {
                 MediaItem(it.id, it.playlistId, it.mediaType, it.title, it.artist, it.fileUri)
             }
             _progressByPlaylist.value = progressList.associateBy { it.playlistId }
+            _trackProgressByMediaId.value = trackProgressList.associateBy { it.mediaId }
             Log.d(TAG, "Loaded ${uiState.value.size} items for '${mediaType.name}' from DB.")
         }
     }
@@ -319,6 +328,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
         }
+        // Drop per-item resumes for files that disappeared in the rescan.
+        val db = AppDatabase.getInstance(getApplication())
+        val staleTrackIds = db.trackProgressDao().getIdsForType(mediaType.name).filter { it !in validIds }
+        if (staleTrackIds.isNotEmpty()) db.trackProgressDao().deleteByIds(staleTrackIds)
     }
 
     private fun compareVersions(v1: String, v2: String): Int {

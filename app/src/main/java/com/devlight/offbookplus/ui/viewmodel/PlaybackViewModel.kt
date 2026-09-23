@@ -151,10 +151,15 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         progressUpdateJob?.cancel()
         progressUpdateJob = viewModelScope.launch {
             while (true) {
-                if (mediaController?.isPlaying == true) {
+                // Poll at 1Hz only while actually playing. Paused state is pushed
+                // via onEvents (seeks, play/pause), so no hot loop is needed then.
+                val playing = mediaController?.isPlaying == true
+                if (playing) {
                     updateStateFromController()
+                    delay(1000)
+                } else {
+                    delay(10_000)
                 }
-                delay(1000)
             }
         }
     }
