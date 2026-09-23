@@ -234,7 +234,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             Log.i(TAG, "Installation Intent sent successfully.")
         } catch (e: Exception) {
             Log.e(TAG, "FATAL: Failed to initiate installation via FileProvider/Intent.", e)
-            toast("Could not start installer.")
+            toast("Install failed: ${e.message}")
             _updateStatus.value = UpdateStatus.ERROR
         }
     }

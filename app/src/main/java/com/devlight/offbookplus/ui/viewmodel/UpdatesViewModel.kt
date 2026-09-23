@@ -216,7 +216,11 @@ class UpdatesViewModel(application: Application) : AndroidViewModel(application)
             Log.i(TAG, "Installation Intent sent successfully.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initiate installation via FileProvider/Intent.", e)
-            toast("Could not start installer.")
+            // Clear the completed marker: the card derives "Tap to Install" from it,
+            // and without this every retry re-runs the same failing install forever.
+            _activeCompleteUrl.value = null
+            _activeDownloadUrl.value = null
+            toast("Install failed: ${e.message}")
             _downloadStatus.update { UpdateStatus.ERROR }
         }
     }
