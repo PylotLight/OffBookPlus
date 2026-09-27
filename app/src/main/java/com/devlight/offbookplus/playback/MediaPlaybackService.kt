@@ -35,6 +35,7 @@ import com.devlight.offbookplus.data.MediaItemEntity
 import com.devlight.offbookplus.data.PlayHistoryRecorder
 import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.data.PlaybackQueueEntity
+import com.devlight.offbookplus.data.StableMediaKey
 import com.devlight.offbookplus.data.TrackProgressEntity
 import com.devlight.offbookplus.model.MediaType
 import com.google.common.util.concurrent.Futures
@@ -120,12 +121,9 @@ class MediaPlaybackService : MediaSessionService() {
             val newItem = newPosition.mediaItem
             if (oldItem != null && oldItem.mediaId != newItem?.mediaId) {
                 if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
-                    // Old item played to its natural end: it is finished, drop its resume.
                     val finishedId = oldItem.mediaId
                     historyScope.launch {
-                        runCatching {
-                            AppDatabase.getInstance(applicationContext).trackProgressDao().delete(finishedId)
-                        }
+                        runCatching { deleteTrackProgressAndSiblings(finishedId) }
                     }
                 } else {
                     saveTrackProgressSnapshot(
@@ -476,7 +474,7 @@ class MediaPlaybackService : MediaSessionService() {
                             // Resume this episode/chapter where it was left, if anywhere.
                             val resumePos = withContext(Dispatchers.IO) {
                                 if (selectedItemEntity.mediaType == MediaType.MUSIC) 0L
-                                else db.trackProgressDao().load(selectedItemEntity.id)?.positionMs ?: 0L
+                                else loadTrackPosition(db, selectedItemEntity.id)
                             }
                             exoPlayer.seekTo(tappedIndex, resumePos.coerceAtLeast(0L))
                             exoPlayer.play()
@@ -505,7 +503,7 @@ class MediaPlaybackService : MediaSessionService() {
                 // (e.g. first tap after an upgrade or a rescan that dropped the queue).
                 val freshResumePos = withContext(Dispatchers.IO) {
                     if (selectedItemEntity.mediaType == MediaType.MUSIC) 0L
-                    else db.trackProgressDao().load(selectedItemEntity.id)?.positionMs ?: 0L
+                    else loadTrackPosition(db, selectedItemEntity.id)
                 }
                 applyQueue(QueueLoad(playlistId, mediaType, items, items.indexOfFirst { it.id == selectedItemEntity.id }.coerceAtLeast(0), freshResumePos.coerceAtLeast(0L), false))
             }
@@ -585,7 +583,13 @@ class MediaPlaybackService : MediaSessionService() {
         val savedIds = runCatching { Json.decodeFromString<List<String>>(saved.orderedIds) }.getOrNull()
         if (savedIds.isNullOrEmpty()) return null
         val entities = db.mediaItemDao().getItemsByIds(savedIds).associateBy { it.id }
-        val ordered = savedIds.mapNotNull { entities[it] }
+        val missing = savedIds.any { it !in entities }
+        val ordered = if (!missing) {
+            savedIds.mapNotNull { entities[it] }
+        } else {
+            val allValid = db.mediaItemDao().getItemsByMediaType(saved.mediaType.name)
+            StableMediaKey.remapToEntities(savedIds, entities, allValid)
+        }
         if (ordered.isEmpty()) return null
         val index = saved.currentIndex.coerceIn(0, ordered.size - 1)
         return QueueLoad(
@@ -601,9 +605,11 @@ class MediaPlaybackService : MediaSessionService() {
     private suspend fun restoreQueue(db: AppDatabase, playlistId: String, mediaType: MediaType, tappedId: String): QueueLoad? {
         val saved = db.playbackQueueDao().load(playlistId) ?: return null
         val load = queueLoadFromSaved(db, saved) ?: return null
-        val tappedIndex = load.items.indexOfFirst { it.id == tappedId }
+        var tappedIndex = load.items.indexOfFirst { it.id == tappedId }
         if (tappedIndex < 0) {
-            // Tapped item isn't in the saved queue (library changed): caller rebuilds fresh.
+            tappedIndex = load.items.indexOfFirst { StableMediaKey.matches(it.id, tappedId) }
+        }
+        if (tappedIndex < 0) {
             return null
         }
         // Re-tapping the saved current track resumes its position; any other tap
@@ -613,7 +619,7 @@ class MediaPlaybackService : MediaSessionService() {
         } else if (mediaType == MediaType.MUSIC) {
             0L
         } else {
-            db.trackProgressDao().load(tappedId)?.positionMs?.coerceAtLeast(0L) ?: 0L
+            loadTrackPosition(db, tappedId)
         }
         return load.copy(startIndex = tappedIndex, startPositionMs = position, mediaType = mediaType)
     }
@@ -776,7 +782,12 @@ class MediaPlaybackService : MediaSessionService() {
             )
             historyScope.launch(Dispatchers.IO) {
                 runCatching {
-                    AppDatabase.getInstance(applicationContext).trackProgressDao().save(row)
+                    val dao = AppDatabase.getInstance(applicationContext).trackProgressDao()
+                    dao.save(row)
+                    val siblings = dao.getAllForType(mediaType.name)
+                        .filter { it.mediaId != mediaId && StableMediaKey.matches(it.mediaId, mediaId) }
+                        .map { it.mediaId }
+                    if (siblings.isNotEmpty()) dao.deleteByIds(siblings)
                 }
             }
         } else if (durationMs == C.TIME_UNSET) {
@@ -786,12 +797,26 @@ class MediaPlaybackService : MediaSessionService() {
         } else {
             historyScope.launch(Dispatchers.IO) {
                 runCatching {
-                    AppDatabase.getInstance(applicationContext).trackProgressDao().delete(mediaId)
+                    deleteTrackProgressAndSiblings(mediaId)
                 }
             }
         }
     }
 
+    private suspend fun loadTrackPosition(db: AppDatabase, mediaId: String): Long {
+        val dao = db.trackProgressDao()
+        dao.load(mediaId)?.positionMs?.let { return it.coerceAtLeast(0L) }
+        val rows = dao.getAllOnce()
+        return StableMediaKey.findTrackMatch(mediaId, rows)?.positionMs?.coerceAtLeast(0L) ?: 0L
+    }
+
+    private suspend fun deleteTrackProgressAndSiblings(mediaId: String) {
+        val dao = AppDatabase.getInstance(applicationContext).trackProgressDao()
+        val victims = dao.getAllOnce()
+            .filter { it.mediaId == mediaId || StableMediaKey.matches(it.mediaId, mediaId) }
+            .map { it.mediaId }
+        if (victims.isNotEmpty()) dao.deleteByIds(victims)
+    }
     private fun clearFinishedTrackProgress() {
         val mediaItem = exoPlayer.currentMediaItem ?: return
         val mediaType = try {
@@ -802,7 +827,7 @@ class MediaPlaybackService : MediaSessionService() {
         val finishedId = mediaItem.mediaId
         historyScope.launch(Dispatchers.IO) {
             runCatching {
-                AppDatabase.getInstance(applicationContext).trackProgressDao().delete(finishedId)
+                deleteTrackProgressAndSiblings(finishedId)
             }
         }
     }

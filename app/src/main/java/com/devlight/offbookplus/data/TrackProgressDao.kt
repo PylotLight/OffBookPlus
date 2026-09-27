@@ -20,6 +20,9 @@ interface TrackProgressDao {
     @Query("SELECT mediaId FROM track_progress WHERE mediaType = :mediaType")
     suspend fun getIdsForType(mediaType: String): List<String>
 
+    @Query("SELECT * FROM track_progress WHERE mediaType = :mediaType")
+    suspend fun getAllForType(mediaType: String): List<TrackProgressEntity>
+
     @Query("DELETE FROM track_progress WHERE mediaId = :mediaId")
     suspend fun delete(mediaId: String)
 

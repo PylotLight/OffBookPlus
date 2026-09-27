@@ -19,6 +19,8 @@ import androidx.lifecycle.viewModelScope
 import com.devlight.offbookplus.data.AppDatabase
 import com.devlight.offbookplus.data.GitHubRelease
 import com.devlight.offbookplus.data.LocalFileScanner
+import com.devlight.offbookplus.data.MediaItemEntity
+import com.devlight.offbookplus.data.StableMediaKey
 import com.devlight.offbookplus.data.PlaybackProgressEntity
 import com.devlight.offbookplus.data.TrackProgressEntity
 import com.devlight.offbookplus.data.UpdateDownloader
@@ -331,37 +333,48 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 MediaItem(it.id, it.playlistId, it.mediaType, it.title, it.artist, it.fileUri)
             }
             _progressByPlaylist.value = progressList.associateBy { it.playlistId }
-            _trackProgressByMediaId.value = trackProgressList.associateBy { it.mediaId }
+            _trackProgressByMediaId.value = resolveTrackProgress(itemsFromDb, trackProgressList)
             Log.d(TAG, "Loaded ${uiState.value.size} items for '${mediaType.name}' from DB.")
         }
     }
 
-    /**
-     * Drops queue entries for files that disappeared in a rescan and clamps indices,
-     * so a restored queue never points at stale media ids.
-     */
     private suspend fun pruneQueuesForType(mediaType: MediaType, validIds: Set<String>) {
+        if (validIds.isEmpty()) return
         queueDao.getAllForType(mediaType.name).forEach { queue ->
             val ids = runCatching { json.decodeFromString<List<String>>(queue.orderedIds) }.getOrNull()
             if (ids == null) {
                 queueDao.delete(queue.queueId)
                 return@forEach
             }
-            val pruned = ids.filter { it in validIds }
+            val remapped = StableMediaKey.remapQueueIds(ids, validIds)
             when {
-                pruned.isEmpty() -> queueDao.delete(queue.queueId)
-                pruned.size != ids.size -> queueDao.save(
+                remapped.isEmpty() -> Unit
+                remapped != ids -> queueDao.save(
                     queue.copy(
-                        orderedIds = json.encodeToString(pruned),
-                        currentIndex = queue.currentIndex.coerceIn(0, pruned.size - 1)
+                        orderedIds = json.encodeToString(remapped),
+                        currentIndex = queue.currentIndex.coerceIn(0, remapped.size - 1)
                     )
                 )
             }
         }
-        // Drop per-item resumes for files that disappeared in the rescan.
-        val db = AppDatabase.getInstance(getApplication())
-        val staleTrackIds = db.trackProgressDao().getIdsForType(mediaType.name).filter { it !in validIds }
-        if (staleTrackIds.isNotEmpty()) db.trackProgressDao().deleteByIds(staleTrackIds)
+    }
+
+    private fun resolveTrackProgress(
+        items: List<MediaItemEntity>,
+        rows: List<TrackProgressEntity>
+    ): Map<String, TrackProgressEntity> {
+        if (rows.isEmpty()) return emptyMap()
+        val exact = rows.associateBy { it.mediaId }
+        val byFileName = rows.groupBy { StableMediaKey.fileName(it.mediaId) }
+        val resolved = HashMap<String, TrackProgressEntity>(items.size)
+        for (item in items) {
+            val hit = exact[item.id]
+                ?: byFileName[StableMediaKey.fileName(item.id)]
+                    ?.firstOrNull { it.mediaType == item.mediaType }
+                ?: byFileName[StableMediaKey.fileName(item.id)]?.firstOrNull()
+            if (hit != null) resolved[item.id] = hit
+        }
+        return resolved
     }
 
     private fun compareVersions(v1: String, v2: String): Int {
