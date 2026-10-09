@@ -151,6 +151,42 @@ class MediaPlaybackService : MediaSessionService() {
             // position; the incoming item is at ~0 and must not wipe its own resume.
             saveCurrentProgress()
             persistCurrentQueue()
+            resumeIncomingItemIfNeeded(mediaItem, reason)
+        }
+
+        /**
+         * Auto/skip transitions land the incoming item at 0. For spoken-word
+         * libraries the incoming item may have its own saved resume (unlike a
+         * direct tap, which seeks to it in loadPlaylistFor), so seek to it here.
+         * Music always starts from the top; playlist (re)loads already position
+         * the start item and must not be disturbed.
+         */
+        private fun resumeIncomingItemIfNeeded(mediaItem: MediaItem?, reason: Int) {
+            if (mediaItem == null) return
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
+            val mediaType = try {
+                mediaItem.mediaMetadata.extras?.getString(PlaybackContract.EXTRA_MEDIA_TYPE)
+                    ?.let { MediaType.valueOf(it) }
+            } catch (e: Exception) { null } ?: return
+            if (mediaType == MediaType.MUSIC) return
+            val targetId = mediaItem.mediaId
+            if (targetId.isBlank()) return
+            serviceScope.launch {
+                val resumePos = withContext(Dispatchers.IO) {
+                    runCatching {
+                        loadTrackPosition(AppDatabase.getInstance(applicationContext), targetId)
+                    }.getOrDefault(0L)
+                }.coerceAtLeast(0L)
+                if (resumePos <= 0L) return@launch
+                if (exoPlayer.currentMediaItem?.mediaId != targetId) return@launch
+                exoPlayer.seekTo(resumePos)
+                // persistCurrentQueue()/saveCurrentProgress() above captured ~0;
+                // re-persist once the seek has settled so a quick kill keeps the resume.
+                delay(500)
+                if (exoPlayer.currentMediaItem?.mediaId != targetId) return@launch
+                saveCurrentProgress()
+                persistCurrentQueue()
+            }
         }
     }
 
