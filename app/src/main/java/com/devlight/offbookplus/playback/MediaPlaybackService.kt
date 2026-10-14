@@ -25,7 +25,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -57,6 +63,33 @@ private const val HISTORY_FLUSH_INTERVAL_MS = 60_000L
 private const val HISTORY_TICK_MS = 30_000L
 private const val HISTORY_MIN_RECORD_MS = 1_000L
 private const val FOREGROUND_SERVICE_TIMEOUT_MS = 120_000L
+private const val PCM_BUFFER_DURATION_US = 2_000_000
+
+/**
+ * When speed != 1x the audio cannot be offloaded and goes through Sonic on the CPU.
+ * A larger PCM AudioTrack buffer lets dynamic scheduling sleep the playback loop
+ * for longer between refills (default target is 500ms).
+ */
+private class PowerSavingRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildAudioSink(
+        context: Context,
+        enableFloatOutput: Boolean,
+        enableAudioOutputPlaybackParams: Boolean
+    ): AudioSink =
+        DefaultAudioSink.Builder(context)
+            .setEnableFloatOutput(enableFloatOutput)
+            .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+            .setAudioOutputProvider(
+                AudioTrackAudioOutputProvider.Builder(context)
+                    .setAudioTrackBufferSizeProvider(
+                        DefaultAudioTrackBufferSizeProvider.Builder()
+                            .setTargetPcmBufferDurationUs(PCM_BUFFER_DURATION_US)
+                            .build()
+                    )
+                    .build()
+            )
+            .build()
+}
 
 class MediaPlaybackService : MediaSessionService() {
 
@@ -93,6 +126,10 @@ class MediaPlaybackService : MediaSessionService() {
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) { Log.e(TAG, "!!! ExoPlayer ERROR !!!", error) }
+        override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+            updateOffloadPreferences(activeQueueMediaType, playbackParameters.speed)
+            writeAudioDiagnostics()
+        }
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 finishPendingItem()
@@ -687,8 +724,9 @@ class MediaPlaybackService : MediaSessionService() {
         // shuffle mode stays off and can never reshuffle the queue behind our back.
         exoPlayer.shuffleModeEnabled = false
         exoPlayer.setMediaItems(mediaItems, index, positionMs)
-        exoPlayer.prepare()
         applySavedSpeed(activeQueueMediaType)
+        updateOffloadPreferences(activeQueueMediaType, exoPlayer.playbackParameters.speed)
+        exoPlayer.prepare()
         exoPlayer.play()
     }
 
@@ -709,6 +747,61 @@ class MediaPlaybackService : MediaSessionService() {
             .setUri(fileUri)
             .setMediaMetadata(metadata)
             .build()
+    }
+
+    /**
+     * Gapless offload is only required for music: spoken word does not care about a
+     * few ms between chapters, and requiring it disables offload entirely on devices
+     * without gapless offload support. Speed-change support is required whenever
+     * speed != 1x, otherwise an offloaded track would silently ignore the speed.
+     */
+    private fun updateOffloadPreferences(mediaType: MediaType, speed: Float) {
+        val wanted = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
+            .setIsGaplessSupportRequired(mediaType == MediaType.MUSIC)
+            .setIsSpeedChangeSupportRequired(speed != 1f)
+            .build()
+        val current = exoPlayer.trackSelectionParameters
+        if (current.audioOffloadPreferences == wanted) return
+        exoPlayer.trackSelectionParameters = current.buildUpon()
+            .setAudioOffloadPreferences(wanted)
+            .build()
+    }
+
+    private var isOffloaded = false
+    private var isSleepingForOffload = false
+
+    private fun writeAudioDiagnostics() {
+        val path = if (isOffloaded) "DSP offload" else "CPU (PCM)"
+        val speed = exoPlayer.playbackParameters.speed
+        getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(PlaybackContract.KEY_DIAG_AUDIO_PATH, path)
+            .putFloat(PlaybackContract.KEY_DIAG_AUDIO_SPEED, speed)
+            .putBoolean(PlaybackContract.KEY_DIAG_OFFLOAD_SLEEPING, isSleepingForOffload)
+            .apply()
+    }
+
+    private val audioOffloadListener = object : ExoPlayer.AudioOffloadListener {
+        override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
+            isOffloaded = isOffloadedPlayback
+            Log.i(TAG, "Audio path: offloaded=$isOffloadedPlayback speed=${exoPlayer.playbackParameters.speed}")
+            writeAudioDiagnostics()
+        }
+
+        override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
+            this@MediaPlaybackService.isSleepingForOffload = isSleepingForOffload
+        }
+    }
+
+    private val audioTrackLogger = object : AnalyticsListener {
+        override fun onAudioTrackInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            audioTrackConfig: AudioSink.AudioTrackConfig
+        ) {
+            Log.i(TAG, "AudioTrack init: offload=${audioTrackConfig.offload} encoding=${audioTrackConfig.encoding} rate=${audioTrackConfig.sampleRate} buffer=${audioTrackConfig.bufferSize}")
+            isOffloaded = audioTrackConfig.offload
+            writeAudioDiagnostics()
+        }
     }
 
     private fun applySavedSpeed(mediaType: MediaType) {
@@ -969,21 +1062,15 @@ class MediaPlaybackService : MediaSessionService() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
         val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
-        exoPlayer = ExoPlayer.Builder(this)
+        exoPlayer = ExoPlayer.Builder(this, PowerSavingRenderersFactory(this))
             .setAudioAttributes(audioAttributes, true)
             .setSeekBackIncrementMs(readSeekIncrementMs(PlaybackContract.KEY_REWIND_MS, PlaybackContract.DEFAULT_REWIND_MS))
             .setSeekForwardIncrementMs(readSeekIncrementMs(PlaybackContract.KEY_FORWARD_MS, PlaybackContract.DEFAULT_FORWARD_MS))
             .build()
 
-        val audioOffloadPreferences = TrackSelectionParameters.AudioOffloadPreferences.Builder()
-            .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
-            .setIsGaplessSupportRequired(true)
-            .build()
-
-        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(audioOffloadPreferences)
-            .build()
+        updateOffloadPreferences(activeQueueMediaType, exoPlayer.playbackParameters.speed)
+        exoPlayer.addAudioOffloadListener(audioOffloadListener)
+        exoPlayer.addAnalyticsListener(audioTrackLogger)
 
         exoPlayer.addListener(playerListener)
         getSharedPreferences(PlaybackContract.PREFS_NAME, MODE_PRIVATE)
@@ -1032,6 +1119,8 @@ class MediaPlaybackService : MediaSessionService() {
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         mediaSession.release()
         exoPlayer.removeListener(playerListener)
+        exoPlayer.removeAudioOffloadListener(audioOffloadListener)
+        exoPlayer.removeAnalyticsListener(audioTrackLogger)
         exoPlayer.release()
         super.onDestroy()
     }

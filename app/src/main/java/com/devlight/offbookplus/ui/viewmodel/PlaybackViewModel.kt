@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -79,8 +80,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         mediaControllerFuture.addListener({
             mediaController?.addListener(controllerListener)
             updateStateFromController()
+            syncProgressTicker()
         }, MoreExecutors.directExecutor())
-        startProgressUpdate()
         refreshSavedQueues()
         refreshHasMusic()
     }
@@ -117,6 +118,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     private inner class MediaControllerListener : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             updateStateFromController()
+            syncProgressTicker()
         }
     }
 
@@ -147,20 +149,31 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
-    private fun startProgressUpdate() {
-        progressUpdateJob?.cancel()
-        progressUpdateJob = viewModelScope.launch {
-            while (true) {
-                // Poll at 1Hz only while actually playing. Paused state is pushed
-                // via onEvents (seeks, play/pause), so no hot loop is needed then.
-                val playing = mediaController?.isPlaying == true
-                if (playing) {
-                    updateStateFromController()
+    private var uiActive = false
+
+    /**
+     * Called from the activity lifecycle (STARTED/STOPPED). The 1Hz position ticker only
+     * runs while the UI is visible AND playing; with the screen off nothing polls.
+     */
+    fun setUiActive(active: Boolean) {
+        uiActive = active
+        if (active) updateStateFromController()
+        syncProgressTicker()
+    }
+
+    private fun syncProgressTicker() {
+        val shouldTick = uiActive && mediaController?.isPlaying == true
+        if (shouldTick) {
+            if (progressUpdateJob?.isActive == true) return
+            progressUpdateJob = viewModelScope.launch {
+                while (isActive) {
                     delay(1000)
-                } else {
-                    delay(10_000)
+                    updateStateFromController()
                 }
             }
+        } else {
+            progressUpdateJob?.cancel()
+            progressUpdateJob = null
         }
     }
 

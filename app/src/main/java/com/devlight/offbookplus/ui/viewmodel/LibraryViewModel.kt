@@ -33,6 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import androidx.room.withTransaction
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -254,20 +257,33 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         super.onCleared()
     }
 
+    private val scanMutex = Mutex()
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
     /**
-     * The single public function called by the UI. It runs the check and then loads the media.
-     * This will be called every time the LibraryScreen for a specific type is displayed.
+     * Called when a library screen is shown and whenever the app returns to the foreground
+     * on it. The change check only stats files, so it is cheap enough to run every time.
      */
     fun checkAndLoadMedia(mediaType: MediaType) {
         _currentMediaType.value = mediaType
         viewModelScope.launch {
-            checkForLibraryUpdates(mediaType, forceRescan = false)
+            loadMedia(mediaType)
+            if (checkForLibraryUpdates(mediaType, forceRescan = false)) loadMedia(mediaType)
+        }
+    }
+
+    /** Rescans just one library (the in-list Rescan button). */
+    fun rescan(mediaType: MediaType) {
+        viewModelScope.launch {
+            checkForLibraryUpdates(mediaType, forceRescan = true)
             loadMedia(mediaType)
         }
     }
 
     /**
-     * The manual rescan button. Forces a full, clean scan of ALL directories.
+     * The manual rescan button. Re-walks every library; unchanged files reuse cached
+     * metadata, so this stays fast.
      */
     fun forceFullRescan() {
         Log.i(TAG, "Manual full rescan initiated.")
@@ -281,46 +297,48 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * Checks a single media type and only rescans if it has changed.
+     * Returns true when the library contents in the database changed.
      */
-    private suspend fun checkForLibraryUpdates(mediaType: MediaType, forceRescan: Boolean) {
-        return withContext(Dispatchers.IO) {
-            Log.d(TAG, "Checking for library updates for ${mediaType.name}...")
-            val scanner = LocalFileScanner(getApplication())
+    private suspend fun checkForLibraryUpdates(mediaType: MediaType, forceRescan: Boolean): Boolean {
+        return scanMutex.withLock {
+            withContext(Dispatchers.IO) {
+                val scanner = LocalFileScanner(getApplication())
+                val storedFileCount = prefs.getInt(KEY_PREFIX_FILE_COUNT + mediaType.name, -1)
+                val storedSignature = prefs.getLong(KEY_PREFIX_LAST_MODIFIED + mediaType.name, -1L)
+                val (currentFileCount, currentSignature) = scanner.getDirectoryState(mediaType)
 
-            val storedFileCount = prefs.getInt(KEY_PREFIX_FILE_COUNT + mediaType.name, -1)
-            val storedLastModified =
-                prefs.getLong(KEY_PREFIX_LAST_MODIFIED + mediaType.name, -1L)
-
-            val (currentFileCount, currentLastModified) = scanner.getDirectoryState(mediaType)
-
-            if (currentFileCount != storedFileCount || currentLastModified != storedLastModified || forceRescan) {
-                Log.i(
-                    TAG,
-                    "Change detected for ${mediaType.name} (Stored: Count=$storedFileCount, TS=$storedLastModified | Current: Count=$currentFileCount, TS=$currentLastModified). Rescanning..."
-                )
-                val newItems = scanner.performDeepScanFor(mediaType)
-                mediaItemDao.deleteByMediaType(mediaType.name)
-                mediaItemDao.insertAll(newItems)
-                pruneQueuesForType(mediaType, newItems.map { it.id }.toSet())
-                prefs.edit {
-                    putInt(
-                        KEY_PREFIX_FILE_COUNT + mediaType.name,
-                        currentFileCount
-                    )
-                    putLong(
-                        KEY_PREFIX_LAST_MODIFIED + mediaType.name,
-                        currentLastModified
-                    )
+                if (!forceRescan && currentFileCount == storedFileCount && currentSignature == storedSignature) {
+                    Log.d(TAG, "No changes detected for ${mediaType.name}. Scan skipped.")
+                    return@withContext false
                 }
-                Log.i(TAG, "Scan complete for ${mediaType.name}. Found ${newItems.size} items.")
-            } else {
-                Log.d(TAG, "No changes detected for ${mediaType.name}. Scan skipped.")
+                Log.i(TAG, "Rescanning ${mediaType.name} (count $storedFileCount -> $currentFileCount, force=$forceRescan)")
+                _isScanning.value = true
+                try {
+                    val newItems = scanner.performDeepScanFor(mediaType)
+                    val existing = mediaItemDao.getItemsByMediaType(mediaType.name)
+                    val changed = existing.sortedBy { it.id } != newItems.sortedBy { it.id }
+                    if (changed) {
+                        AppDatabase.getInstance(getApplication()).withTransaction {
+                            mediaItemDao.deleteByMediaType(mediaType.name)
+                            mediaItemDao.insertAll(newItems)
+                        }
+                        pruneQueuesForType(mediaType, newItems.map { it.id }.toSet())
+                    }
+                    prefs.edit {
+                        putInt(KEY_PREFIX_FILE_COUNT + mediaType.name, currentFileCount)
+                        putLong(KEY_PREFIX_LAST_MODIFIED + mediaType.name, currentSignature)
+                    }
+                    Log.i(TAG, "Scan complete for ${mediaType.name}. Found ${newItems.size} items, changed=$changed.")
+                    changed
+                } finally {
+                    _isScanning.value = false
+                }
             }
         }
     }
 
-    private fun loadMedia(mediaType: MediaType) {
-        viewModelScope.launch {
+    private suspend fun loadMedia(mediaType: MediaType) {
+        run {
             val (itemsFromDb, progressList, trackProgressList) = withContext(Dispatchers.IO) {
                 val db = AppDatabase.getInstance(getApplication())
                 Triple(
@@ -329,6 +347,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     db.trackProgressDao().getAllOnce()
                 )
             }
+            if (_currentMediaType.value != mediaType) return
             _uiState.value = itemsFromDb.map {
                 MediaItem(it.id, it.playlistId, it.mediaType, it.title, it.artist, it.fileUri)
             }

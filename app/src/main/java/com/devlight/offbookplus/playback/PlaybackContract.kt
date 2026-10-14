@@ -48,4 +48,8 @@ object PlaybackContract {
     const val EXTRA_QUEUE_ID = "QUEUE_ID"
     const val EXTRA_SHUFFLE_ENABLED = "SHUFFLE_ENABLED"
     const val EXTRA_OPEN_PLAYER = "open_player"
+
+    const val KEY_DIAG_AUDIO_PATH = "diag_audio_path"
+    const val KEY_DIAG_AUDIO_SPEED = "diag_audio_speed"
+    const val KEY_DIAG_OFFLOAD_SLEEPING = "diag_offload_sleeping"
 }
