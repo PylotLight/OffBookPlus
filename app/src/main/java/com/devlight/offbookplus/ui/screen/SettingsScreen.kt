@@ -6,11 +6,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Update
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import java.util.Locale
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -42,6 +50,8 @@ fun SettingsScreen(
     val doubleTap by playbackViewModel.doubleTapAction.collectAsState()
     val tripleTap by playbackViewModel.tripleTapAction.collectAsState()
     val context = LocalContext.current
+    val isScanning by viewModel.isScanning.collectAsState()
+    val audioPath = rememberAudioPathLabel(context)
     val currentVersion =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
     ScalingLazyColumn(
@@ -105,8 +115,9 @@ fun SettingsScreen(
         item {
             Chip(
                 onClick = { viewModel.forceFullRescan() },
-                label = { Text("Force Full Rescan") },
+                label = { Text(if (isScanning) "Scanning…" else "Force Full Rescan") },
                 secondaryLabel = { Text("Rescan all media folders.") },
+                enabled = !isScanning,
                 icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = "Rescan") }
             )
         }
@@ -154,6 +165,14 @@ fun SettingsScreen(
         }
         item {
             Chip(
+                onClick = {},
+                label = { Text("Audio path") },
+                secondaryLabel = { Text(audioPath) },
+                icon = { Icon(imageVector = Icons.Default.GraphicEq, contentDescription = "Audio path") }
+            )
+        }
+        item {
+            Chip(
                 onClick = { onNavigate(NavRoutes.HISTORY_ROUTE) },
                 label = { Text("Play History") },
                 secondaryLabel = { Text("Recently played media.") },
@@ -180,4 +199,25 @@ private fun tapActionLabel(action: String): String = when (action) {
     PlaybackContract.ACTION_REWIND -> "Seek back"
     PlaybackContract.ACTION_FORWARD -> "Seek forward"
     else -> "Off"
+}
+
+@Composable
+private fun rememberAudioPathLabel(context: Context): String {
+    val prefs = remember { context.getSharedPreferences(PlaybackContract.PREFS_NAME, Context.MODE_PRIVATE) }
+    fun read(): String {
+        val path = prefs.getString(PlaybackContract.KEY_DIAG_AUDIO_PATH, null) ?: return "Play something first"
+        val speed = prefs.getFloat(PlaybackContract.KEY_DIAG_AUDIO_SPEED, 1f)
+        return "$path · ${String.format(Locale.US, "%.2fx", speed)}"
+    }
+    var label by remember { mutableStateOf(read()) }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == PlaybackContract.KEY_DIAG_AUDIO_PATH || key == PlaybackContract.KEY_DIAG_AUDIO_SPEED) {
+                label = read()
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    return label
 }

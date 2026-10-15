@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -20,6 +20,9 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CompactChip
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material3.Card
@@ -47,7 +50,11 @@ fun LibraryScreen(
     val savedQueues by playbackViewModel.savedQueues.collectAsState()
     val hasSavedQueue = savedQueues.any { it.mediaType == mediaType }
 
-    LaunchedEffect(mediaType) {
+    val isScanning by libraryViewModel.isScanning.collectAsState()
+
+    // Fires on first show and every time the screen/app comes back to the foreground,
+    // so files pushed while the app was in the background show up without re-entering.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         libraryViewModel.checkAndLoadMedia(mediaType)
         playbackViewModel.refreshSavedQueues()
     }
@@ -55,6 +62,15 @@ fun LibraryScreen(
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(mediaType.title, style = MaterialTheme.typography.titleMedium)
+        }
+        item {
+            CompactChip(
+                onClick = { if (!isScanning) libraryViewModel.rescan(mediaType) },
+                label = { Text(if (isScanning) "Scanning…" else "Rescan", maxLines = 1) },
+                icon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                colors = ChipDefaults.secondaryChipColors(),
+                enabled = !isScanning
+            )
         }
         if (hasSavedQueue) {
             item {

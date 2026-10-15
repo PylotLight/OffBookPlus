@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
@@ -62,6 +64,9 @@ fun WearApp(startAtPlayer: Boolean = false) {
         val libraryViewModel: LibraryViewModel = viewModel()
         val playbackViewModel: PlaybackViewModel = viewModel()
         val updatesViewModel: UpdatesViewModel = viewModel()
+
+        LifecycleEventEffect(Lifecycle.Event.ON_START) { playbackViewModel.setUiActive(true) }
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { playbackViewModel.setUiActive(false) }
 
         val scope = rememberCoroutineScope()
         val screenHeightPx = with(LocalDensity.current) {
